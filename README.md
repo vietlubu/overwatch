@@ -1,169 +1,218 @@
-# Nightwatch POC Ingest Server
+# Nightwatch Ingest Server
 
-Mock server giả lập Nightwatch backend để test Laravel Nightwatch package locally.
+Production-ready Laravel application để nhận và xử lý monitoring data từ Laravel Nightwatch package.
 
-## 🎯 Tính năng
-
-- ✅ **TCP Socket Server** (port 2407) - Nhận data từ Laravel Nightwatch package
-- ✅ **HTTP Authentication** (`/api/agent-auth`) - Xác thực agent token
-- ✅ **HTTP Ingest Endpoint** (`/api/ingest`) - Nhận data qua HTTP
-- ✅ **Protocol Parser** - Parse Nightwatch TCP protocol (`LENGTH:VERSION:TOKEN:DATA`)
-- ✅ **Acknowledgment Response** - Gửi `2:OK` cho Laravel sau khi nhận data
-- ✅ **Event logging** - Log tất cả events nhận được
-
-## 🏗️ Kiến trúc hoạt động
+## 📦 Project Structure
 
 ```
-┌─────────────────┐
-│  Laravel App    │
-│                 │
-│  Nightwatch     │
-│  Package        │
-└────────┬────────┘
-         │ TCP Socket
-         │ (port 2407)
-         │ Protocol: LENGTH:VERSION:TOKEN:DATA
-         ▼
-┌─────────────────┐
-│ poc-ingest.js   │
-│                 │
-│ TCP Server      │◄──── Nhận events từ Laravel
-│ (127.0.0.1:2407)│      Parse & log data
-│                 │      Gửi "2:OK" acknowledgment
-└─────────────────┘
+overwatch/
+├── app/                    # Laravel application
+├── config/                 # Configuration files
+│   └── nightwatch.php     # Nightwatch ingest config
+├── database/              # Migrations & seeders
+├── routes/                # API routes
+├── public/                # Public assets
+├── resources/             # Views & frontend
+│
+├── poc/                   # POC Server (Node.js)
+│   ├── poc-ingest.js     # POC implementation
+│   ├── test-connection.js # Connection test
+│   └── README.md         # POC documentation
+│
+├── nightwatch/           # Laravel Nightwatch package (reference)
+│
+├── README.md             # This file
+├── LARAVEL-SETUP.md      # Laravel implementation guide
+├── GETTING-STARTED.md    # Quick start guide
+├── composer.json         # PHP dependencies
+└── artisan              # Laravel CLI
 ```
+
+## 🎯 Mục đích
+
+Server này nhận events từ Laravel applications thông qua Nightwatch package và:
+
+- ✅ Parse Nightwatch TCP protocol
+- ✅ Store events vào database
+- ✅ Cung cấp API để query metrics
+- ✅ Build analytics dashboard
+- ✅ Alert & notifications
 
 ## 🚀 Quick Start
 
-### 1. Cài đặt dependencies
+### Option 1: Laravel Ingest Server (Production)
 
 ```bash
-npm install
+# 1. Install dependencies
+composer install
+
+# 2. Setup environment
+cp .env.example .env
+php artisan key:generate
+
+# 3. Configure database (SQLite default)
+# Already configured in .env
+
+# 4. Run migrations
+php artisan migrate
+
+# 5. Start server
+php artisan serve
 ```
 
-### 2. Khởi động server
+Server chạy tại: `http://localhost:8000`
+
+### Option 2: POC Server (Quick Testing)
 
 ```bash
-# Sử dụng default token (dev-token)
+# 1. Navigate to POC directory
+cd poc
+
+# 2. Install dependencies
+npm install
+
+# 3. Start POC server
 npm run dev
 
-# Hoặc custom token
-NIGHTWATCH_TOKEN=my-secret-token node poc-ingest.js
-```
-
-Server sẽ lắng nghe trên:
-
-- **TCP Socket**: `127.0.0.1:2407` (nhận data từ Laravel)
-- **HTTP**: `http://localhost:3000` (authentication & ingest)
-
-### 3. Test server
-
-```bash
+# 4. Test connection
 npm test
 ```
 
-Expected output:
+POC server chạy tại:
+
+- TCP: `127.0.0.1:2407`
+- HTTP: `http://localhost:3000`
+
+## 🏗️ Architecture
 
 ```
-✅ Authentication successful
-✅ HTTP ingest successful
-✅ TCP connection established
-✅ Received acknowledgment from server
-✅ TCP message sent successfully
+┌─────────────────────┐
+│  Laravel Apps       │
+│  (with Nightwatch)  │
+└──────────┬──────────┘
+           │ TCP Socket
+           │ Protocol: LENGTH:VERSION:TOKEN:DATA
+           ▼
+┌─────────────────────┐
+│  Ingest Server      │
+│  (This Laravel App) │
+│                     │
+│  ┌───────────────┐  │
+│  │ TCP Server    │  │◄─── Nhận events
+│  │ (Port 2407)   │  │
+│  └───────┬───────┘  │
+│          │          │
+│  ┌───────▼───────┐  │
+│  │ Event Parser  │  │◄─── Parse protocol
+│  └───────┬───────┘  │
+│          │          │
+│  ┌───────▼───────┐  │
+│  │ Database      │  │◄─── Store events
+│  │ (SQLite/MySQL)│  │
+│  └───────────────┘  │
+│                     │
+│  ┌───────────────┐  │
+│  │ HTTP API      │  │◄─── Query & Analytics
+│  │ Dashboard     │  │
+│  └───────────────┘  │
+└─────────────────────┘
 ```
 
-## 📋 Environment Variables
+## 🔗 Kết nối với Laravel App
+
+### 1. Cài đặt Nightwatch package vào Laravel app
 
 ```bash
-NIGHTWATCH_TOKEN=dev-token    # Token để authenticate (phải khớp với Laravel)
-HTTP_PORT=3000                # HTTP server port
-TCP_PORT=2407                 # TCP socket port
-```
-
-## 🔗 Kết nối với Laravel
-
-### 1. Cài đặt Nightwatch package
-
-```bash
+cd /path/to/your/laravel/app
 composer require laravel/nightwatch
 php artisan vendor:publish --tag=nightwatch-config
 ```
 
-### 2. Cấu hình `.env` trong Laravel project
-
-**Cấu hình tối thiểu:**
+### 2. Cấu hình `.env` trong Laravel app
 
 ```env
 NIGHTWATCH_ENABLED=true
 NIGHTWATCH_TOKEN=dev-token
 NIGHTWATCH_INGEST_URI=127.0.0.1:2407
-NIGHTWATCH_BASE_URL=http://localhost:3000
-```
-
-**Cấu hình đầy đủ:**
-
-```env
-# Enable Nightwatch
-NIGHTWATCH_ENABLED=true
-
-# Token - PHẢI KHỚP với token của poc-ingest.js
-NIGHTWATCH_TOKEN=dev-token
-
-# TCP socket (127.0.0.1, KHÔNG PHẢI localhost)
-NIGHTWATCH_INGEST_URI=127.0.0.1:2407
-
-# HTTP base URL
-NIGHTWATCH_BASE_URL=http://localhost:3000
-
-# Server identifier (optional)
+NIGHTWATCH_BASE_URL=http://localhost:8000
 NIGHTWATCH_SERVER=my-laravel-app
-NIGHTWATCH_DEPLOY=local
-
-# Sampling rates (1.0 = capture 100%)
-NIGHTWATCH_REQUEST_SAMPLE_RATE=1.0
-NIGHTWATCH_COMMAND_SAMPLE_RATE=1.0
-NIGHTWATCH_EXCEPTION_SAMPLE_RATE=1.0
-
-# Capture settings
-NIGHTWATCH_CAPTURE_REQUEST_PAYLOAD=true
-NIGHTWATCH_INGEST_EVENT_BUFFER=50
-
-# Filtering (set to true to ignore)
-NIGHTWATCH_IGNORE_CACHE_EVENTS=false
-NIGHTWATCH_IGNORE_QUERIES=false
 ```
 
-### 3. Khởi động Laravel
+### 3. Clear cache và start
 
 ```bash
 php artisan config:clear
-php artisan serve
+php artisan serve --port=8001
 ```
 
 ### 4. Trigger events
 
 ```bash
 # HTTP requests
-curl http://127.0.0.1:8000
+curl http://127.0.0.1:8001
 
 # Artisan commands
 php artisan inspire
-php artisan route:list
 
 # Database queries
 php artisan migrate:status
 ```
 
-### 5. Sử dụng start script (tự động start cả 2 services)
+## 📋 Configuration
+
+### Laravel Ingest Server (.env)
+
+```env
+# Application
+APP_NAME="Nightwatch Ingest"
+APP_ENV=local
+APP_DEBUG=true
+APP_URL=http://localhost:8000
+
+# Database
+DB_CONNECTION=sqlite
+
+# Nightwatch Configuration
+NIGHTWATCH_TOKEN=dev-token
+NIGHTWATCH_TCP_HOST=127.0.0.1
+NIGHTWATCH_TCP_PORT=2407
+
+# Event Processing
+NIGHTWATCH_USE_QUEUE=false
+NIGHTWATCH_RETENTION_DAYS=30
+```
+
+Full configuration: `config/nightwatch.php`
+
+## 🛠️ Laravel Commands
+
+### Start Development Server
 
 ```bash
-# Start cả poc-ingest.js và Laravel
-./start-dev.sh /path/to/laravel/project
+php artisan serve
+```
+
+### Run Migrations
+
+```bash
+php artisan migrate
+```
+
+### Run Tests
+
+```bash
+php artisan test
+```
+
+### Start TCP Server (coming soon)
+
+```bash
+php artisan nightwatch:listen
 ```
 
 ## 📊 Event Types
 
-Server sẽ nhận và log các event types từ Nightwatch:
+Server sẽ nhận và store các event types từ Nightwatch:
 
 | Event Type                                           | Trigger          | Mô tả                         |
 | ---------------------------------------------------- | ---------------- | ----------------------------- |
@@ -178,51 +227,26 @@ Server sẽ nhận và log các event types từ Nightwatch:
 | `outgoing_request`                                   | HTTP client      | URL, method, status           |
 | `cache_hit` / `cache_miss`                           | Cache operation  | Key, tags                     |
 
-## 🔍 Example Output
+## 🧪 Testing
 
-Khi Laravel gửi data, bạn sẽ thấy:
-
-```
-TCP client connected from 127.0.0.1:52431
-
-=== TCP Message ===
-Version: v1
-Token hash: a1b2c3d
-Payload: 3 record(s)
-[
-  {
-    "type": "request_started",
-    "uuid": "9d123456-7890-...",
-    "timestamp": 1705123456,
-    "method": "GET",
-    "uri": "/api/users",
-    "hostname": "my-laravel-app"
-  },
-  {
-    "type": "query",
-    "connection_name": "mysql",
-    "sql": "select * from users",
-    "duration": 12.34
-  },
-  {
-    "type": "request_finished",
-    "duration": 156.78,
-    "status": 200,
-    "memory": 2048000
-  }
-]
-Received 3 records via TCP
-===================
-
-TCP client disconnected
-```
-
-## 🛠️ NPM Scripts
+### Test với POC Server
 
 ```bash
-npm start           # Khởi động server (cần set NIGHTWATCH_TOKEN)
-npm run dev         # Khởi động với default token (dev-token)
-npm test            # Test connection với server
+cd poc
+npm test
+```
+
+### Test Laravel Application
+
+```bash
+php artisan test
+```
+
+### Manual TCP Test
+
+```bash
+echo -n '15:v1:abc1234:PING' | nc 127.0.0.1 2407
+# Expected: 2:OK
 ```
 
 ## 📡 Protocol Format
@@ -251,217 +275,111 @@ LENGTH:PAYLOAD_VERSION:TOKEN_HASH:DATA
 2:OK
 ```
 
-### Các thành phần:
-
-- **LENGTH**: Độ dài của phần còn lại (integer as string)
-- **PAYLOAD_VERSION**: `"v1"` (version hiện tại)
-- **TOKEN_HASH**: 7 ký tự đầu của xxh128 hash của token
-- **DATA**: JSON array hoặc text (như "PING")
-
-### Response flow:
-
-1. Laravel kết nối TCP socket
-2. Laravel gửi: `LENGTH:VERSION:TOKEN:DATA`
-3. Server parse và process
-4. Server phải gửi: `2:OK`
-5. Laravel đóng connection
-
-## 📝 API Endpoints
-
-### POST `/api/agent-auth`
-
-Authenticate agent và nhận access token.
-
-**Request:**
-
-```bash
-curl -X POST http://localhost:3000/api/agent-auth \
-  -H "Authorization: Bearer dev-token" \
-  -H "Content-Type: application/json" \
-  -d '{}'
-```
-
-**Response:**
-
-```json
-{
-  "token": "ingest-access-token",
-  "expires_in": 3600,
-  "refresh_in": 300,
-  "ingest_url": "http://localhost:3000/api/ingest"
-}
-```
-
-### POST `/api/ingest`
-
-Nhận monitoring data từ agent (HTTP alternative).
-
-**Request:**
-
-```bash
-curl -X POST http://localhost:3000/api/ingest \
-  -H "Authorization: Bearer ingest-access-token" \
-  -H "Content-Encoding: gzip" \
-  -H "Content-Type: application/json" \
-  --data-binary @payload.json.gz
-```
-
-**Response:**
-
-```json
-{
-  "message": "ok"
-}
-```
-
 ## 🐛 Troubleshooting
 
-### Vấn đề 1: TCP client kết nối và ngắt ngay lập tức
-
-**Triệu chứng:**
-
-```
-TCP client connected from 127.0.0.1:63140
-TCP client disconnected
-TCP client connected from 127.0.0.1:63141
-TCP client disconnected
-```
-
-**Nguyên nhân:** Server không gửi acknowledgment `2:OK`
-
-**Giải pháp:**
-
-1. Đảm bảo sử dụng phiên bản mới nhất của `poc-ingest.js`
-2. Restart server: `npm run dev`
-3. Test: `npm test`
-
-### Vấn đề 2: Server không khởi động được
-
-```bash
-# Kiểm tra port đã bị chiếm chưa
-lsof -i :2407
-lsof -i :3000
-
-# Kill process nếu cần
-kill -9 <PID>
-
-# Restart
-npm run dev
-```
-
-### Vấn đề 3: Laravel không kết nối được
+### Laravel app không kết nối được
 
 **Checklist:**
 
-- [ ] poc-ingest.js đang chạy
-- [ ] `NIGHTWATCH_TOKEN` khớp giữa Laravel và server
+- [ ] Ingest server đang chạy (`php artisan serve`)
+- [ ] `NIGHTWATCH_TOKEN` khớp giữa Laravel app và ingest server
 - [ ] `NIGHTWATCH_INGEST_URI=127.0.0.1:2407` (KHÔNG PHẢI localhost)
-- [ ] `NIGHTWATCH_ENABLED=true`
+- [ ] `NIGHTWATCH_ENABLED=true` trong Laravel app
 - [ ] Đã clear cache: `php artisan config:clear`
 
 **Debug steps:**
 
 ```bash
-# 1. Check Laravel config
+# 1. Check Laravel app config
 php artisan config:show nightwatch
 
 # 2. Check token
 grep NIGHTWATCH_TOKEN .env
 
-# 3. Test connection
-cd /path/to/poc-ingest
-npm test
+# 3. Test with POC server first
+cd poc && npm test
 
 # 4. Restart everything
-pkill -f "node poc-ingest.js"
-pkill -f "php artisan serve"
-npm run dev &
-cd /path/to/laravel && php artisan serve
+php artisan config:clear
+php artisan serve
 ```
 
-### Vấn đề 4: Không thấy events
-
-**Nguyên nhân thường gặp:**
-
-- Buffer size quá lớn (events chưa được gửi)
-- Sampling rate < 1.0
-- Event types bị ignore
-
-**Giải pháp:**
-
-```env
-# Giảm buffer để gửi nhanh hơn
-NIGHTWATCH_INGEST_EVENT_BUFFER=10
-
-# Capture 100% events
-NIGHTWATCH_REQUEST_SAMPLE_RATE=1.0
-NIGHTWATCH_COMMAND_SAMPLE_RATE=1.0
-
-# Đừng ignore event types
-NIGHTWATCH_IGNORE_QUERIES=false
-NIGHTWATCH_IGNORE_CACHE_EVENTS=false
-```
-
-### Vấn đề 5: Authentication failed
-
-**Error:** `403 [Invalid refresh token]`
-
-**Giải pháp:**
+### Server không khởi động được
 
 ```bash
-# Token phải giống nhau
-# Laravel .env:
-NIGHTWATCH_TOKEN=dev-token
+# Check port availability
+lsof -i :8000
 
-# Start server:
-NIGHTWATCH_TOKEN=dev-token node poc-ingest.js
+# Install dependencies
+composer install
+
+# Re-run migrations
+php artisan migrate:fresh
 ```
 
-## 🎯 Tips & Best Practices
+## 📚 Documentation
 
-### Development
-
-- ✅ Dùng `127.0.0.1` thay vì `localhost` cho `NIGHTWATCH_INGEST_URI`
-- ✅ Token phải giống nhau ở Laravel và poc-ingest.js
-- ✅ Chạy `php artisan config:clear` sau khi thay đổi .env
-- ✅ Set buffer = 10-50 để thấy events nhanh hơn khi dev
-- ✅ Set sampling rate = 1.0 khi testing
-- ✅ Dùng `./start-dev.sh` để start cả 2 services
-
-### Testing
-
-```bash
-# Test 1: Server connection
-npm test
-
-# Test 2: Manual TCP test
-echo -n '15:v1:abc1234:PING' | nc 127.0.0.1 2407
-# Expected: 2:OK
-
-# Test 3: Laravel events
-curl http://127.0.0.1:8000
-php artisan inspire
-```
-
-### One-liner restart
-
-```bash
-pkill -f "node poc-ingest.js"; pkill -f "php artisan serve"; \
-cd /path/to/poc && npm run dev & \
-cd /path/to/laravel && php artisan config:clear && php artisan serve &
-```
-
-## 📚 Resources
-
-- [Laravel Nightwatch Documentation](https://nightwatch.laravel.com/docs)
+- [LARAVEL-SETUP.md](./LARAVEL-SETUP.md) - Chi tiết implementation Laravel server
+- [GETTING-STARTED.md](./GETTING-STARTED.md) - Hướng dẫn setup từng bước
+- [poc/README.md](./poc/README.md) - POC server documentation
+- [Laravel Nightwatch Docs](https://nightwatch.laravel.com/docs)
 - [Laravel Nightwatch GitHub](https://github.com/laravel/nightwatch)
 
-## 📄 Files
+## 🚀 Development Roadmap
 
-- `poc-ingest.js` - Main server
-- `test-connection.js` - Connection test script
-- `start-dev.sh` - Auto start both services
-- `package.json` - NPM configuration
+### ✅ Completed
+
+- [x] POC server implementation (Node.js)
+- [x] TCP protocol parser
+- [x] HTTP authentication endpoint
+- [x] Connection testing
+- [x] Laravel project initialization
+- [x] Configuration setup
+
+### 🚧 In Progress
+
+- [ ] TCP server command (`php artisan nightwatch:listen`)
+- [ ] Database migrations (events, metrics tables)
+- [ ] Event models & repositories
+- [ ] API controllers
+- [ ] Dashboard UI
+
+### 📋 Planned
+
+- [ ] Real-time metrics aggregation
+- [ ] Alert system
+- [ ] Multiple server support
+- [ ] ClickHouse integration
+- [ ] Grafana/Prometheus exporters
+
+## 🎯 Use Cases
+
+### POC Server
+
+Dùng để:
+
+- ✅ Test Nightwatch integration
+- ✅ Quick prototyping
+- ✅ Understand protocol format
+- ✅ Development environment
+
+### Laravel Server
+
+Dùng để:
+
+- ✅ Production deployment
+- ✅ Store data trong database
+- ✅ Analytics & reporting
+- ✅ Monitor multiple Laravel apps
+- ✅ Team collaboration
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create feature branch
+3. Commit changes
+4. Push to branch
+5. Create Pull Request
 
 ## 📄 License
 

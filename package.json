@@ -1,0 +1,14 @@
+{
+  "name": "nightwatch-poc-ingest",
+  "version": "1.0.0",
+  "description": "POC server for testing Laravel Nightwatch integration",
+  "scripts": {
+    "start": "node poc-ingest.js",
+    "dev": "NIGHTWATCH_TOKEN=dev-token node poc-ingest.js",
+    "test": "node test-connection.js",
+    "test:verbose": "NIGHTWATCH_TOKEN=dev-token node test-connection.js"
+  },
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}

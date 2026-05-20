@@ -1,5 +1,5 @@
 <script setup>
-defineProps({
+const props = defineProps({
     visible: {
         type: Boolean,
         default: false,
@@ -11,6 +11,39 @@ defineProps({
 });
 
 const emit = defineEmits(['close']);
+
+const escapeHtml = (value) =>
+    String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+
+const renderCopy = (action) => {
+    const copy = String(action.description ?? '');
+    const emphasis = String(action.emphasis ?? '').trim();
+
+    if (!emphasis) {
+        return escapeHtml(copy);
+    }
+
+    const lowerCopy = copy.toLowerCase();
+    const lowerEmphasis = emphasis.toLowerCase();
+    const start = lowerCopy.indexOf(lowerEmphasis);
+
+    if (start === -1) {
+        return escapeHtml(copy);
+    }
+
+    const end = start + emphasis.length;
+
+    return [
+        escapeHtml(copy.slice(0, start)),
+        `<span class="keybinding-focus">${escapeHtml(copy.slice(start, end))}</span>`,
+        escapeHtml(copy.slice(end)),
+    ].join('');
+};
 </script>
 
 <template>
@@ -22,12 +55,8 @@ const emit = defineEmits(['close']);
 
         <div class="keybinding-list">
             <article v-for="action in actions" :key="action.key" class="keybinding-row">
-                <div class="keybinding-row-main">
-                    <span class="keybinding-key">{{ action.key }}</span>
-                    <span class="keybinding-arrow">-&gt;</span>
-                    <span class="keybinding-label">{{ action.label }}</span>
-                </div>
-                <div class="keybinding-copy">{{ action.description }}</div>
+                <span class="keybinding-key">{{ action.key }}</span>
+                <div class="keybinding-copy" v-html="renderCopy(action)" />
             </article>
         </div>
     </section>

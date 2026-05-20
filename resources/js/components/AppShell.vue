@@ -20,8 +20,33 @@ const props = defineProps({
 
 const route = useRoute();
 const router = useRouter();
+const FILTER_STORAGE_KEY = 'overwatch.active-filter';
 
-const activeFilter = ref(props.filters.find((filter) => filter.key === '1h')?.key ?? props.filters[0]?.key ?? '1h');
+const escapeHtml = (value) =>
+    String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+
+const resolveInitialFilter = () => {
+    const defaultFilter = props.filters.find((filter) => filter.key === '1h')?.key ?? props.filters[0]?.key ?? '1h';
+
+    if (typeof window === 'undefined') {
+        return defaultFilter;
+    }
+
+    const storedFilter = window.localStorage.getItem(FILTER_STORAGE_KEY);
+
+    if (storedFilter && props.filters.some((filter) => filter.key === storedFilter)) {
+        return storedFilter;
+    }
+
+    return defaultFilter;
+};
+
+const activeFilter = ref(resolveInitialFilter());
 const projects = ref([]);
 const projectsLoading = ref(false);
 const projectsError = ref('');
@@ -34,6 +59,29 @@ let keybindingTimerId = null;
 
 const setActiveFilter = (filterKey) => {
     activeFilter.value = filterKey;
+};
+
+const renderNavLabel = (label, shortcut) => {
+    const safeLabel = String(label ?? '');
+    const safeShortcut = String(shortcut ?? '').trim();
+
+    if (!safeShortcut) {
+        return escapeHtml(safeLabel);
+    }
+
+    const index = safeLabel.toLowerCase().indexOf(safeShortcut.toLowerCase());
+
+    if (index === -1) {
+        return `${escapeHtml(safeLabel)} <span class="nav-shortcut-key">[${escapeHtml(safeShortcut)}]</span>`;
+    }
+
+    const end = index + safeShortcut.length;
+
+    return [
+        escapeHtml(safeLabel.slice(0, index)),
+        `<span class="nav-shortcut-key">${escapeHtml(safeLabel.slice(index, end))}</span>`,
+        escapeHtml(safeLabel.slice(end)),
+    ].join('');
 };
 
 const scopedQuery = computed(() => pickScopeQuery(route.query));
@@ -85,20 +133,6 @@ const projectEntries = computed(() => {
     return entries;
 });
 
-const currentScopeLabel = computed(() => {
-    const projectId = scopedQuery.value.project_id ?? null;
-    const environment = scopedQuery.value.environment ?? null;
-
-    if (!projectId) {
-        return 'All projects';
-    }
-
-    const project = projects.value.find((entry) => String(entry.id) === String(projectId));
-    const projectName = project?.name ?? `Project #${projectId}`;
-
-    return environment ? `${projectName} · ${environment}` : `${projectName} · all envs`;
-});
-
 const currentProjectName = computed(() => {
     const projectId = scopedQuery.value.project_id ?? null;
 
@@ -126,104 +160,104 @@ const currentProjectMeta = computed(() => {
 const commandActions = computed(() => [
     {
         key: 'p',
-        label: 'Project scope',
-        description: 'Open the project picker.',
+        description: 'open project picker',
+        emphasis: 'project',
         run: () => openProjectPicker(),
     },
     {
         key: 'd',
-        label: 'Dashboard',
-        description: 'Go to the dashboard view.',
+        description: 'open dashboard',
+        emphasis: 'dashboard',
         run: () => navigateTo({ name: 'dashboard' }),
     },
     {
         key: 'i',
-        label: 'Issues',
-        description: 'Go to the issues queue.',
+        description: 'open issues',
+        emphasis: 'issues',
         run: () => navigateTo({ name: 'screen', params: { screenKey: 'issues' } }),
     },
     {
         key: 'r',
-        label: 'Requests',
-        description: 'Go to the HTTP requests screen.',
+        description: 'open requests',
+        emphasis: 'requests',
         run: () => navigateTo({ name: 'screen', params: { screenKey: 'requests' } }),
     },
     {
         key: 'j',
-        label: 'Jobs',
-        description: 'Go to the jobs screen.',
+        description: 'open jobs',
+        emphasis: 'jobs',
         run: () => navigateTo({ name: 'screen', params: { screenKey: 'jobs' } }),
     },
     {
         key: 'c',
-        label: 'Commands',
-        description: 'Go to the commands screen.',
+        description: 'open commands',
+        emphasis: 'commands',
         run: () => navigateTo({ name: 'screen', params: { screenKey: 'commands' } }),
     },
     {
         key: 't',
-        label: 'Scheduled tasks',
-        description: 'Go to scheduled tasks.',
+        description: 'open scheduled tasks',
+        emphasis: 'scheduled tasks',
         run: () => navigateTo({ name: 'screen', params: { screenKey: 'scheduled-tasks' } }),
     },
     {
         key: 'x',
-        label: 'Exceptions',
-        description: 'Go to grouped exceptions.',
+        description: 'open exceptions',
+        emphasis: 'exceptions',
         run: () => navigateTo({ name: 'screen', params: { screenKey: 'exceptions' } }),
     },
     {
         key: 'q',
-        label: 'Queries',
-        description: 'Go to grouped database queries.',
+        description: 'open queries',
+        emphasis: 'queries',
         run: () => navigateTo({ name: 'screen', params: { screenKey: 'queries' } }),
     },
     {
         key: 'n',
-        label: 'Notifications',
-        description: 'Go to notification events.',
+        description: 'open notifications',
+        emphasis: 'notifications',
         run: () => navigateTo({ name: 'screen', params: { screenKey: 'notifications' } }),
     },
     {
         key: 'm',
-        label: 'Mail',
-        description: 'Go to mail events.',
+        description: 'open mail',
+        emphasis: 'mail',
         run: () => navigateTo({ name: 'screen', params: { screenKey: 'mail' } }),
     },
     {
         key: 'a',
-        label: 'Cache',
-        description: 'Go to cache activity.',
+        description: 'open cache',
+        emphasis: 'cache',
         run: () => navigateTo({ name: 'screen', params: { screenKey: 'cache' } }),
     },
     {
         key: 'o',
-        label: 'Outgoing requests',
-        description: 'Go to outgoing requests.',
+        description: 'open outgoing requests',
+        emphasis: 'outgoing requests',
         run: () => navigateTo({ name: 'screen', params: { screenKey: 'outgoing-requests' } }),
     },
     {
         key: 'u',
-        label: 'Users',
-        description: 'Go to users.',
+        description: 'open users',
+        emphasis: 'users',
         run: () => navigateTo({ name: 'screen', params: { screenKey: 'users' } }),
     },
     {
         key: 'l',
-        label: 'Logs',
-        description: 'Go to logs.',
+        description: 'open logs',
+        emphasis: 'logs',
         run: () => navigateTo({ name: 'screen', params: { screenKey: 'logs' } }),
     },
     {
         key: 'w',
-        label: 'Settings',
-        description: 'Go to workspace settings.',
+        description: 'open settings',
+        emphasis: 'settings',
         run: () => navigateTo({ name: 'screen', params: { screenKey: 'settings' } }),
     },
     {
         key: 's',
-        label: 'Support',
-        description: 'Go to support and docs.',
+        description: 'open support',
+        emphasis: 'support',
         run: () => navigateTo({ name: 'screen', params: { screenKey: 'support' } }),
     },
 ]);
@@ -427,6 +461,12 @@ watch(
     },
 );
 
+watch(activeFilter, (value) => {
+    if (typeof window !== 'undefined') {
+        window.localStorage.setItem(FILTER_STORAGE_KEY, value);
+    }
+});
+
 onMounted(() => {
     fetchProjectOptions();
     window.addEventListener('keydown', handleGlobalKeydown);
@@ -444,10 +484,6 @@ onBeforeUnmount(() => {
             <div class="sidebar-header">
                 <div class="brand-title prompt-label">{{ currentProjectName }}</div>
                 <div class="brand-meta">{{ currentProjectMeta }}</div>
-                <div class="scope-meta">
-                    <span class="scope-label">Scope</span>
-                    <span class="scope-value">{{ currentScopeLabel }}</span>
-                </div>
             </div>
 
             <nav class="sidebar-nav">
@@ -462,7 +498,7 @@ onBeforeUnmount(() => {
                     >
                         <span class="nav-main">
                             <span class="nav-icon">{{ item.icon }}</span>
-                            <span class="nav-label">{{ item.label }}</span>
+                            <span class="nav-label" v-html="renderNavLabel(item.label, item.shortcut)" />
                         </span>
                         <span v-if="item.badge" class="nav-badge">{{ item.badge }}</span>
                     </RouterLink>

@@ -18,37 +18,37 @@ export const navSections = [
     {
         title: 'Overview',
         items: [
-            { key: 'dashboard', label: 'Dashboard', icon: '[]', to: { name: 'dashboard' } },
-            { key: 'issues', label: 'Issues', icon: '[!]', badge: '1', to: { name: 'screen', params: { screenKey: 'issues' } } },
+            { key: 'dashboard', label: 'Dashboard', shortcut: 'd', icon: '[]', to: { name: 'dashboard' } },
+            { key: 'issues', label: 'Issues', shortcut: 'i', icon: '[!]', badge: '1', to: { name: 'screen', params: { screenKey: 'issues' } } },
         ],
     },
     {
         title: 'Activity',
         items: [
-            { key: 'requests', label: 'Requests', icon: '->', to: { name: 'screen', params: { screenKey: 'requests' } } },
-            { key: 'jobs', label: 'Jobs', icon: '{}', to: { name: 'screen', params: { screenKey: 'jobs' } } },
-            { key: 'commands', label: 'Commands', icon: '>_', to: { name: 'screen', params: { screenKey: 'commands' } } },
-            { key: 'scheduled-tasks', label: 'Scheduled Tasks', icon: '[*]', to: { name: 'screen', params: { screenKey: 'scheduled-tasks' } } },
-            { key: 'exceptions', label: 'Exceptions', icon: '[x]', to: { name: 'screen', params: { screenKey: 'exceptions' } } },
-            { key: 'queries', label: 'Queries', icon: '[?]', to: { name: 'screen', params: { screenKey: 'queries' } } },
-            { key: 'notifications', label: 'Notifications', icon: '[@]', to: { name: 'screen', params: { screenKey: 'notifications' } } },
-            { key: 'mail', label: 'Mail', icon: '[M]', to: { name: 'screen', params: { screenKey: 'mail' } } },
-            { key: 'cache', label: 'Cache', icon: '[$]', to: { name: 'screen', params: { screenKey: 'cache' } } },
-            { key: 'outgoing-requests', label: 'Outgoing Requests', icon: '<-', to: { name: 'screen', params: { screenKey: 'outgoing-requests' } } },
+            { key: 'requests', label: 'Requests', shortcut: 'r', icon: '->', to: { name: 'screen', params: { screenKey: 'requests' } } },
+            { key: 'jobs', label: 'Jobs', shortcut: 'j', icon: '{}', to: { name: 'screen', params: { screenKey: 'jobs' } } },
+            { key: 'commands', label: 'Commands', shortcut: 'c', icon: '>_', to: { name: 'screen', params: { screenKey: 'commands' } } },
+            { key: 'scheduled-tasks', label: 'Scheduled Tasks', shortcut: 't', icon: '[*]', to: { name: 'screen', params: { screenKey: 'scheduled-tasks' } } },
+            { key: 'exceptions', label: 'Exceptions', shortcut: 'x', icon: '[x]', to: { name: 'screen', params: { screenKey: 'exceptions' } } },
+            { key: 'queries', label: 'Queries', shortcut: 'q', icon: '[?]', to: { name: 'screen', params: { screenKey: 'queries' } } },
+            { key: 'notifications', label: 'Notifications', shortcut: 'n', icon: '[@]', to: { name: 'screen', params: { screenKey: 'notifications' } } },
+            { key: 'mail', label: 'Mail', shortcut: 'm', icon: '[M]', to: { name: 'screen', params: { screenKey: 'mail' } } },
+            { key: 'cache', label: 'Cache', shortcut: 'a', icon: '[$]', to: { name: 'screen', params: { screenKey: 'cache' } } },
+            { key: 'outgoing-requests', label: 'Outgoing Requests', shortcut: 'o', icon: '<-', to: { name: 'screen', params: { screenKey: 'outgoing-requests' } } },
         ],
     },
     {
         title: 'Monitoring',
         items: [
-            { key: 'users', label: 'Users', icon: '[U]', to: { name: 'screen', params: { screenKey: 'users' } } },
-            { key: 'logs', label: 'Logs', icon: '[L]', to: { name: 'screen', params: { screenKey: 'logs' } } },
+            { key: 'users', label: 'Users', shortcut: 'u', icon: '[U]', to: { name: 'screen', params: { screenKey: 'users' } } },
+            { key: 'logs', label: 'Logs', shortcut: 'l', icon: '[L]', to: { name: 'screen', params: { screenKey: 'logs' } } },
         ],
     },
     {
         title: 'Workspace',
         items: [
-            { key: 'settings', label: 'Settings', icon: '[=]', to: { name: 'screen', params: { screenKey: 'settings' } } },
-            { key: 'support', label: 'Support', icon: '[?]', to: { name: 'screen', params: { screenKey: 'support' } } },
+            { key: 'settings', label: 'Settings', shortcut: 'w', icon: '[=]', to: { name: 'screen', params: { screenKey: 'settings' } } },
+            { key: 'support', label: 'Support', shortcut: 's', icon: '[?]', to: { name: 'screen', params: { screenKey: 'support' } } },
         ],
     },
 ];

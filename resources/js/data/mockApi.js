@@ -1230,6 +1230,12 @@ export const apiBlueprint = {
         detailToken: '{groupHash}',
         tables: ['nw_cache_events'],
     },
+    'outgoing-requests': {
+        listEndpoint: '/api/outgoing-requests',
+        detailEndpoint: '/api/outgoing-requests/{groupHash}',
+        detailToken: '{groupHash}',
+        tables: ['nw_outgoing_requests', 'nw_outgoing_host_1m'],
+    },
 };
 
 export const getScreen = (screenKey) => screens[screenKey] ?? null;

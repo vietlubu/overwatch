@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\NightwatchExceptionController;
 use App\Http\Controllers\Api\NightwatchJobController;
 use App\Http\Controllers\Api\NightwatchMailController;
 use App\Http\Controllers\Api\NightwatchNotificationController;
+use App\Http\Controllers\Api\NightwatchOutgoingRequestController;
 use App\Http\Controllers\Api\NightwatchQueryController;
 use App\Http\Controllers\Api\NightwatchRequestController;
 use App\Http\Controllers\Api\NightwatchScheduledTaskController;
@@ -37,3 +38,6 @@ Route::get('/mail/{groupHash}', [NightwatchMailController::class, 'show']);
 
 Route::get('/cache', [NightwatchCacheController::class, 'index']);
 Route::get('/cache/{groupHash}', [NightwatchCacheController::class, 'show']);
+
+Route::get('/outgoing-requests', [NightwatchOutgoingRequestController::class, 'index']);
+Route::get('/outgoing-requests/{groupHash}', [NightwatchOutgoingRequestController::class, 'show']);

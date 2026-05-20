@@ -553,6 +553,64 @@ class NightwatchApiTest extends TestCase
         );
     }
 
+    public function test_outgoing_requests_index_returns_grouped_hosts_and_pagination(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson("/api/outgoing-requests?project_id={$this->projectOneId}&environment=production&search=discord-webhook-proxy&per_page=1");
+
+        $response->assertOk();
+        $response->assertJsonPath('kind', 'collection');
+        $response->assertJsonPath('table.rows.0.domain.text', 'discord-webhook-proxy.bearstack.vn');
+        $response->assertJsonPath('table.rows.0.requests.text', '2');
+        $response->assertJsonPath('table.rows.0.status.text', '200');
+        $response->assertJsonPath('pagination.total', 1);
+        $response->assertJsonCount(1, 'table.rows');
+    }
+
+    public function test_outgoing_request_show_returns_scoped_group_detail(): void
+    {
+        $this->seedFixtures();
+
+        $groupHash = '61616161616161616161616161616161';
+        $response = $this->getJson("/api/outgoing-requests/{$groupHash}?project_id={$this->projectOneId}&environment=production");
+
+        $response->assertOk();
+        $response->assertJsonPath('title', 'discord-webhook-proxy.bearstack.vn');
+        $response->assertJsonPath('tags.0.text', 'GET');
+        $response->assertJsonPath('tags.1.text', '200');
+        $response->assertJsonPath('summaryPanels.0.entries.0.value', 'https://discord-webhook-proxy.bearstack.vn');
+        $response->assertJsonPath('summaryPanels.0.entries.3.value', '64B');
+        $response->assertJsonPath('tables.0.rows.0.call.meta', 'GET /orders/{order} · exec-orders-3');
+        $response->assertJsonPath('tables.0.rows.0.duration.text', '318.41ms');
+    }
+
+    public function test_outgoing_request_show_returns_not_found_for_unknown_group(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson("/api/outgoing-requests/63636363636363636363636363636363?project_id={$this->projectOneId}&environment=production");
+
+        $response->assertNotFound();
+        $response->assertJsonPath(
+            'message',
+            'Nightwatch outgoing request group [63636363636363636363636363636363] was not found.',
+        );
+    }
+
+    public function test_outgoing_request_show_requires_scope_when_group_hash_is_ambiguous(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson('/api/outgoing-requests/62626262626262626262626262626262');
+
+        $response->assertStatus(409);
+        $response->assertJsonPath(
+            'message',
+            'Outgoing request group hash [62626262626262626262626262626262] exists in multiple project/environment scopes. Pass project_id and environment.',
+        );
+    }
+
     private function seedFixtures(): void
     {
         if ($this->seeded) {
@@ -575,6 +633,8 @@ class NightwatchApiTest extends TestCase
         $duplicateMailGroupHash = '42424242424242424242424242424242';
         $cacheGroupHash = '51515151515151515151515151515151';
         $duplicateCacheGroupHash = '52525252525252525252525252525252';
+        $outgoingGroupHash = '61616161616161616161616161616161';
+        $duplicateOutgoingGroupHash = '62626262626262626262626262626262';
 
         $this->ingest($this->projectOneTokenHash, [
             $this->userEvent($baseTime, 'user-1', 'Alice Nguyen', 'alice@example.com'),
@@ -751,7 +811,16 @@ class NightwatchApiTest extends TestCase
                 'context' => '{"worker":"orders"}',
             ]),
             $this->logEvent($baseTime->addMinutes(20)->addMilliseconds(20), 'exec-orders-2', 'exec-orders-2'),
-            $this->outgoingRequestEvent($baseTime->addMinutes(20)->addMilliseconds(30), 'exec-orders-2', 'exec-orders-2'),
+            $this->outgoingRequestEvent($baseTime->addMinutes(20)->addMilliseconds(30), 'exec-orders-2', 'exec-orders-2', [
+                '_group' => $outgoingGroupHash,
+                'host' => 'discord-webhook-proxy.bearstack.vn',
+                'method' => 'GET',
+                'url' => 'https://discord-webhook-proxy.bearstack.vn',
+                'duration' => 542480,
+                'request_size' => 64,
+                'response_size' => 542,
+                'status_code' => 200,
+            ]),
             $this->cacheEvent($baseTime->addMinutes(20)->addMilliseconds(50), 'exec-orders-2', 'exec-orders-2', [
                 '_group' => $cacheGroupHash,
                 'store' => 'redis',
@@ -796,6 +865,7 @@ class NightwatchApiTest extends TestCase
                 'notifications' => 1,
                 'mail' => 1,
                 'cache_events' => 1,
+                'outgoing_requests' => 1,
                 'exception_preview' => 'Charge gateway timeout',
             ]),
             $this->queuedJobEvent($baseTime->addMinutes(36), 'job-trace-send-receipt', 'exec-orders-3', 'job-send-receipt', [
@@ -849,6 +919,16 @@ class NightwatchApiTest extends TestCase
                 'duration' => 310,
                 'ttl' => 60,
             ]),
+            $this->outgoingRequestEvent($baseTime->addMinutes(35)->addMilliseconds(35), 'exec-orders-3', 'exec-orders-3', [
+                '_group' => $outgoingGroupHash,
+                'host' => 'discord-webhook-proxy.bearstack.vn',
+                'method' => 'GET',
+                'url' => 'https://discord-webhook-proxy.bearstack.vn',
+                'duration' => 318410,
+                'request_size' => 64,
+                'response_size' => 542,
+                'status_code' => 200,
+            ]),
             $this->jobAttemptEvent($baseTime->addMinutes(37), 'job-trace-send-receipt', 'job-attempt-send-receipt', 'job-send-receipt', [
                 'name' => 'App\\Jobs\\SendReceipt',
                 'connection' => 'sqs',
@@ -893,6 +973,16 @@ class NightwatchApiTest extends TestCase
                 'type' => 'write',
                 'duration' => 420,
                 'ttl' => 30,
+            ]),
+            $this->outgoingRequestEvent($baseTime->addMinutes(6)->addMilliseconds(35), 'duplicate-execution', 'duplicate-execution', [
+                '_group' => $duplicateOutgoingGroupHash,
+                'host' => 'duplicate-outgoing.test',
+                'method' => 'POST',
+                'url' => 'https://duplicate-outgoing.test/hook',
+                'duration' => 1820,
+                'request_size' => 120,
+                'response_size' => 320,
+                'status_code' => 202,
             ]),
         ]);
 
@@ -972,6 +1062,16 @@ class NightwatchApiTest extends TestCase
                 'type' => 'miss',
                 'duration' => 510,
                 'ttl' => 30,
+            ]),
+            $this->outgoingRequestEvent($baseTime->addMinutes(6)->addMilliseconds(35), 'duplicate-execution', 'duplicate-execution', [
+                '_group' => $duplicateOutgoingGroupHash,
+                'host' => 'duplicate-outgoing.test',
+                'method' => 'POST',
+                'url' => 'https://duplicate-outgoing.test/hook',
+                'duration' => 1940,
+                'request_size' => 120,
+                'response_size' => 320,
+                'status_code' => 202,
             ]),
         ]);
 

@@ -151,6 +151,61 @@ class NightwatchApiTest extends TestCase
         );
     }
 
+    public function test_jobs_index_returns_filtered_jobs_and_pagination(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson("/api/jobs?project_id={$this->projectOneId}&environment=production&search=SendReceipt&per_page=1");
+
+        $response->assertOk();
+        $response->assertJsonPath('kind', 'collection');
+        $response->assertJsonPath('table.rows.0.job.text', 'App\\Jobs\\SendReceipt');
+        $response->assertJsonPath('table.rows.0.attempts.text', '1');
+        $response->assertJsonPath('table.rows.0.status.text', 'failed');
+        $response->assertJsonPath('table.rows.0.queue.text', 'billing');
+        $response->assertJsonPath('pagination.total', 1);
+        $response->assertJsonCount(1, 'table.rows');
+    }
+
+    public function test_job_show_returns_scoped_job_detail(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson("/api/jobs/job-sync-order?project_id={$this->projectOneId}&environment=production");
+
+        $response->assertOk();
+        $response->assertJsonPath('title', 'App\\Jobs\\SyncOrder');
+        $response->assertJsonPath('tags.0.text', 'processed');
+        $response->assertJsonPath('summaryPanels.0.entries.1.value', 'redis');
+        $response->assertJsonPath('summaryPanels.1.entries.2.value', '2');
+        $response->assertJsonPath('tables.0.rows.0.attempt.text', 'attempt #1');
+        $response->assertJsonPath('tables.0.rows.0.duration.text', '1.80ms');
+        $this->assertStringContainsString('"worker": "orders"', (string) $response->json('codePanels.0.code'));
+    }
+
+    public function test_job_show_returns_not_found_for_unknown_job(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson("/api/jobs/missing-job?project_id={$this->projectOneId}&environment=production");
+
+        $response->assertNotFound();
+        $response->assertJsonPath('message', 'Nightwatch job [missing-job] was not found.');
+    }
+
+    public function test_job_show_requires_scope_when_job_id_is_ambiguous(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson('/api/jobs/duplicate-job');
+
+        $response->assertStatus(409);
+        $response->assertJsonPath(
+            'message',
+            'Job id [duplicate-job] exists in multiple project/environment scopes. Pass project_id and environment.',
+        );
+    }
+
     private function seedFixtures(): void
     {
         if ($this->seeded) {
@@ -197,6 +252,17 @@ class NightwatchApiTest extends TestCase
                 'cache_events' => 0,
                 'exception_preview' => '',
             ]),
+            $this->queuedJobEvent($baseTime->addMinutes(8), 'duplicate-trace-one', 'duplicate-execution', 'duplicate-job', [
+                'name' => 'App\\Jobs\\DuplicateScopeJob',
+                'queue' => 'shared',
+            ]),
+            $this->jobAttemptEvent($baseTime->addMinutes(9), 'duplicate-trace-one', 'duplicate-job-attempt-one', 'duplicate-job', [
+                'name' => 'App\\Jobs\\DuplicateScopeJob',
+                'queue' => 'shared',
+                'status' => 'processed',
+                'duration' => 1200,
+                'context' => '{"worker":"shared"}',
+            ]),
             $this->requestEvent($baseTime->addMinutes(20), 'exec-orders-2', [
                 'user' => 'user-1',
                 'url' => 'https://app.test/orders/2',
@@ -216,6 +282,21 @@ class NightwatchApiTest extends TestCase
             $this->queryEvent($baseTime->addMinutes(20)->addMilliseconds(10), 'exec-orders-2', 'exec-orders-2', [
                 'sql' => 'select * from "payments" where "order_id" = ?',
                 'duration' => 480,
+            ]),
+            $this->queuedJobEvent($baseTime->addMinutes(21), 'job-trace-sync-order', 'exec-orders-2', 'job-sync-order', [
+                'name' => 'App\\Jobs\\SyncOrder',
+                'queue' => 'orders',
+                'duration' => 90,
+            ]),
+            $this->jobAttemptEvent($baseTime->addMinutes(22), 'job-trace-sync-order', 'job-attempt-sync-order', 'job-sync-order', [
+                'name' => 'App\\Jobs\\SyncOrder',
+                'queue' => 'orders',
+                'status' => 'processed',
+                'duration' => 1800,
+                'queries' => 2,
+                'logs' => 1,
+                'peak_memory_usage' => 8192,
+                'context' => '{"worker":"orders"}',
             ]),
             $this->logEvent($baseTime->addMinutes(20)->addMilliseconds(20), 'exec-orders-2', 'exec-orders-2'),
             $this->outgoingRequestEvent($baseTime->addMinutes(20)->addMilliseconds(30), 'exec-orders-2', 'exec-orders-2'),
@@ -255,6 +336,27 @@ class NightwatchApiTest extends TestCase
                 'queries' => 2,
                 'exception_preview' => 'Charge gateway timeout',
             ]),
+            $this->queuedJobEvent($baseTime->addMinutes(36), 'job-trace-send-receipt', 'exec-orders-3', 'job-send-receipt', [
+                'name' => 'App\\Jobs\\SendReceipt',
+                'connection' => 'sqs',
+                'queue' => 'billing',
+                'duration' => 110,
+            ]),
+            $this->jobAttemptEvent($baseTime->addMinutes(37), 'job-trace-send-receipt', 'job-attempt-send-receipt', 'job-send-receipt', [
+                'name' => 'App\\Jobs\\SendReceipt',
+                'connection' => 'sqs',
+                'queue' => 'billing',
+                'status' => 'failed',
+                'duration' => 2600,
+                'exceptions' => 1,
+                'exception_preview' => 'Receipt mail transport failed',
+                'context' => '{"worker":"billing"}',
+            ]),
+            $this->queuedJobEvent($baseTime->addMinutes(38), 'job-trace-fanout', 'exec-orders-3', 'job-fanout-analytics', [
+                'name' => 'App\\Jobs\\FanOutAnalytics',
+                'queue' => 'analytics',
+                'duration' => 75,
+            ]),
             $this->exceptionEvent($baseTime->addMinutes(35)->addMilliseconds(10), 'exec-orders-3', 'exec-orders-3', [
                 '_group' => $groupHash,
                 'message' => 'Charge gateway timeout',
@@ -277,6 +379,17 @@ class NightwatchApiTest extends TestCase
                 'duration' => 1600,
                 'exceptions' => 1,
                 'exception_preview' => 'Duplicate scope exception',
+            ]),
+            $this->queuedJobEvent($baseTime->addMinutes(7), 'duplicate-trace-two', 'duplicate-execution', 'duplicate-job', [
+                'name' => 'App\\Jobs\\DuplicateScopeJob',
+                'queue' => 'shared',
+            ]),
+            $this->jobAttemptEvent($baseTime->addMinutes(8), 'duplicate-trace-two', 'duplicate-job-attempt-two', 'duplicate-job', [
+                'name' => 'App\\Jobs\\DuplicateScopeJob',
+                'queue' => 'shared',
+                'status' => 'processed',
+                'duration' => 1300,
+                'context' => '{"worker":"shared-2"}',
             ]),
             $this->exceptionEvent($baseTime->addMinutes(6), 'duplicate-execution', 'duplicate-execution', [
                 '_group' => $duplicateGroupHash,
@@ -559,6 +672,74 @@ class NightwatchApiTest extends TestCase
             'type' => 'hit',
             'duration' => 25,
             'ttl' => 300,
+        ], $overrides);
+    }
+
+    /**
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
+    private function queuedJobEvent(CarbonImmutable $time, string $trace, string $executionId, string $jobId, array $overrides = []): array
+    {
+        return array_replace([
+            'v' => 1,
+            't' => 'queued-job',
+            'timestamp' => $this->floatTimestamp($time),
+            'deploy' => 'deploy-a',
+            'server' => 'api-1',
+            '_group' => 'queued-job-group-00000000000000000001',
+            'trace_id' => $trace,
+            'execution_source' => 'request',
+            'execution_id' => $executionId,
+            'execution_preview' => 'GET /orders/1',
+            'execution_stage' => 'action',
+            'user' => 'user-1',
+            'job_id' => $jobId,
+            'name' => 'App\\Jobs\\SyncOrder',
+            'connection' => 'redis',
+            'queue' => 'orders',
+            'duration' => 75,
+        ], $overrides);
+    }
+
+    /**
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
+    private function jobAttemptEvent(CarbonImmutable $time, string $trace, string $attemptId, string $jobId, array $overrides = []): array
+    {
+        return array_replace([
+            'v' => 1,
+            't' => 'job-attempt',
+            'timestamp' => $this->floatTimestamp($time),
+            'deploy' => 'deploy-a',
+            'server' => 'worker-1',
+            '_group' => 'job-attempt-group-0000000000000000001',
+            'trace_id' => $trace,
+            'user' => 'user-1',
+            'job_id' => $jobId,
+            'attempt_id' => $attemptId,
+            'attempt' => 1,
+            'name' => 'App\\Jobs\\SyncOrder',
+            'connection' => 'redis',
+            'queue' => 'orders',
+            'status' => 'processed',
+            'duration' => 1500,
+            'exceptions' => 0,
+            'logs' => 0,
+            'queries' => 0,
+            'lazy_loads' => 0,
+            'jobs_queued' => 0,
+            'mail' => 0,
+            'notifications' => 0,
+            'outgoing_requests' => 0,
+            'files_read' => 0,
+            'files_written' => 0,
+            'cache_events' => 0,
+            'hydrated_models' => 0,
+            'peak_memory_usage' => 3072,
+            'exception_preview' => '',
+            'context' => '{"worker":"default"}',
         ], $overrides);
     }
 

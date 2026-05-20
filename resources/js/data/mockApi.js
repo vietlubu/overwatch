@@ -1179,16 +1179,25 @@ export const apiBlueprint = {
     requests: {
         listEndpoint: '/api/requests',
         detailEndpoint: '/api/requests/{executionId}',
+        detailToken: '{executionId}',
         tables: ['nw_request_route_1m', 'nw_request_details', 'nw_executions'],
     },
     exceptions: {
         listEndpoint: '/api/exceptions',
         detailEndpoint: '/api/exceptions/{groupHash}',
+        detailToken: '{groupHash}',
         tables: ['nw_exceptions', 'nw_executions'],
+    },
+    jobs: {
+        listEndpoint: '/api/jobs',
+        detailEndpoint: '/api/jobs/{jobId}',
+        detailToken: '{jobId}',
+        tables: ['nw_jobs', 'nw_queued_jobs', 'nw_job_attempt_details'],
     },
     queries: {
         listEndpoint: '/api/queries',
         detailEndpoint: '/api/queries/{groupHash}',
+        detailToken: '{groupHash}',
         tables: ['nw_query_group_1m', 'nw_queries'],
     },
 };

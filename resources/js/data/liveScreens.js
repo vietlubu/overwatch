@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { apiBlueprint } from './mockApi';
 
-const liveScreenKeys = new Set(['requests', 'exceptions']);
+const liveScreenKeys = new Set(['requests', 'exceptions', 'jobs']);
 
 const pickScope = (query = {}) => {
     const scope = {};
@@ -62,7 +62,7 @@ export const fetchLiveDetail = async (screenKey, detailId, { routeQuery = {} } =
     }
 
     const endpoint = blueprint.detailEndpoint.replace(
-        screenKey === 'requests' ? '{executionId}' : '{groupHash}',
+        blueprint.detailToken ?? '{detailId}',
         encodeURIComponent(detailId),
     );
 

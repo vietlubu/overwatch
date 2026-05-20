@@ -111,7 +111,7 @@ watch(
         <div>
             <div class="empty-mark">[~]</div>
             <h2 class="empty-title">Loading telemetry</h2>
-            <p class="empty-copy">Fetching the latest request and exception data from Overwatch.</p>
+            <p class="empty-copy">Fetching the latest Overwatch screen data.</p>
         </div>
     </section>
 

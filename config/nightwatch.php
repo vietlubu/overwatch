@@ -61,8 +61,14 @@ return [
         // Data retention period in days (0 = keep forever)
         'retention_days' => env('NIGHTWATCH_RETENTION_DAYS', 30),
 
+        // Rollup retention period in days
+        'rollup_retention_days' => env('NIGHTWATCH_ROLLUP_RETENTION_DAYS', 180),
+
         // Auto-cleanup old data
         'auto_cleanup' => env('NIGHTWATCH_AUTO_CLEANUP', true),
+
+        // Number of future monthly partitions to pre-create for raw events.
+        'partition_precreate_months' => env('NIGHTWATCH_PARTITION_PRECREATE_MONTHS', 2),
 
         // Database table name for events
         'events_table' => 'events',

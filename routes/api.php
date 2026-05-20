@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\NightwatchCommandController;
 use App\Http\Controllers\Api\NightwatchExceptionController;
 use App\Http\Controllers\Api\NightwatchJobController;
+use App\Http\Controllers\Api\NightwatchMailController;
 use App\Http\Controllers\Api\NightwatchNotificationController;
 use App\Http\Controllers\Api\NightwatchQueryController;
 use App\Http\Controllers\Api\NightwatchRequestController;
@@ -29,3 +30,6 @@ Route::get('/queries/{groupHash}', [NightwatchQueryController::class, 'show']);
 
 Route::get('/notifications', [NightwatchNotificationController::class, 'index']);
 Route::get('/notifications/{groupHash}', [NightwatchNotificationController::class, 'show']);
+
+Route::get('/mail', [NightwatchMailController::class, 'index']);
+Route::get('/mail/{groupHash}', [NightwatchMailController::class, 'show']);

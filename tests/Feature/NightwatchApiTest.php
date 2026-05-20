@@ -437,6 +437,63 @@ class NightwatchApiTest extends TestCase
         );
     }
 
+    public function test_mail_index_returns_grouped_mail_and_pagination(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson("/api/mail?project_id={$this->projectOneId}&environment=production&search=Weekly%20digest&per_page=1");
+
+        $response->assertOk();
+        $response->assertJsonPath('kind', 'collection');
+        $response->assertJsonPath('table.rows.0.mail.text', 'Weekly digest');
+        $response->assertJsonPath('table.rows.0.recipients.text', '5');
+        $response->assertJsonPath('pagination.total', 1);
+        $response->assertJsonCount(1, 'table.rows');
+    }
+
+    public function test_mail_show_returns_scoped_group_detail(): void
+    {
+        $this->seedFixtures();
+
+        $groupHash = '41414141414141414141414141414141';
+        $response = $this->getJson("/api/mail/{$groupHash}?project_id={$this->projectOneId}&environment=production");
+
+        $response->assertOk();
+        $response->assertJsonPath('title', 'Weekly digest');
+        $response->assertJsonPath('tags.0.text', 'smtp');
+        $response->assertJsonPath('tags.1.text', 'sent');
+        $response->assertJsonPath('summaryPanels.0.entries.0.value', 'App\\Mail\\WeeklyDigestMail');
+        $response->assertJsonPath('summaryPanels.0.entries.2.value', '2');
+        $response->assertJsonPath('tables.0.rows.0.message.meta', 'GET /orders/{order} · exec-orders-3');
+        $response->assertJsonPath('tables.0.rows.0.duration.text', '16.42ms');
+    }
+
+    public function test_mail_show_returns_not_found_for_unknown_group(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson("/api/mail/43434343434343434343434343434343?project_id={$this->projectOneId}&environment=production");
+
+        $response->assertNotFound();
+        $response->assertJsonPath(
+            'message',
+            'Nightwatch mail group [43434343434343434343434343434343] was not found.',
+        );
+    }
+
+    public function test_mail_show_requires_scope_when_group_hash_is_ambiguous(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson('/api/mail/42424242424242424242424242424242');
+
+        $response->assertStatus(409);
+        $response->assertJsonPath(
+            'message',
+            'Mail group hash [42424242424242424242424242424242] exists in multiple project/environment scopes. Pass project_id and environment.',
+        );
+    }
+
     private function seedFixtures(): void
     {
         if ($this->seeded) {
@@ -455,6 +512,8 @@ class NightwatchApiTest extends TestCase
         $duplicateQueryGroupHash = '78787878787878787878787878787878';
         $notificationGroupHash = '31313131313131313131313131313131';
         $duplicateNotificationGroupHash = '32323232323232323232323232323232';
+        $mailGroupHash = '41414141414141414141414141414141';
+        $duplicateMailGroupHash = '42424242424242424242424242424242';
 
         $this->ingest($this->projectOneTokenHash, [
             $this->userEvent($baseTime, 'user-1', 'Alice Nguyen', 'alice@example.com'),
@@ -597,6 +656,7 @@ class NightwatchApiTest extends TestCase
                 'notifications' => 1,
                 'outgoing_requests' => 1,
                 'cache_events' => 1,
+                'mail' => 1,
                 'exception_preview' => 'Charge gateway timeout',
                 'headers' => '{"accept":["application/json"],"content-type":["application/json"]}',
                 'payload' => '{"order_id":42,"retry":true}',
@@ -654,6 +714,7 @@ class NightwatchApiTest extends TestCase
                 'notifications' => 0,
                 'outgoing_requests' => 0,
                 'cache_events' => 0,
+                'mail' => 1,
                 'exception_preview' => '',
             ]),
             $this->requestEvent($baseTime->addMinutes(35), 'exec-orders-3', [
@@ -665,6 +726,7 @@ class NightwatchApiTest extends TestCase
                 'duration' => 1800,
                 'queries' => 2,
                 'notifications' => 1,
+                'mail' => 1,
                 'exception_preview' => 'Charge gateway timeout',
             ]),
             $this->queuedJobEvent($baseTime->addMinutes(36), 'job-trace-send-receipt', 'exec-orders-3', 'job-send-receipt', [
@@ -694,6 +756,22 @@ class NightwatchApiTest extends TestCase
                 'class' => 'App\\Notifications\\PostViewed',
                 'duration' => 14420,
             ]),
+            $this->mailEvent($baseTime->addMinutes(20)->addMilliseconds(45), 'exec-orders-2', 'exec-orders-2', [
+                '_group' => $mailGroupHash,
+                'mailer' => 'smtp',
+                'class' => 'App\\Mail\\WeeklyDigestMail',
+                'subject' => 'Weekly digest',
+                'to' => 3,
+                'duration' => 18550,
+            ]),
+            $this->mailEvent($baseTime->addMinutes(35)->addMilliseconds(25), 'exec-orders-3', 'exec-orders-3', [
+                '_group' => $mailGroupHash,
+                'mailer' => 'smtp',
+                'class' => 'App\\Mail\\WeeklyDigestMail',
+                'subject' => 'Weekly digest',
+                'to' => 2,
+                'duration' => 16420,
+            ]),
             $this->jobAttemptEvent($baseTime->addMinutes(37), 'job-trace-send-receipt', 'job-attempt-send-receipt', 'job-send-receipt', [
                 'name' => 'App\\Jobs\\SendReceipt',
                 'connection' => 'sqs',
@@ -722,6 +800,14 @@ class NightwatchApiTest extends TestCase
                 'channel' => 'mail',
                 'class' => 'App\\Notifications\\DuplicateScopeAlert',
                 'duration' => 1800,
+            ]),
+            $this->mailEvent($baseTime->addMinutes(6)->addMilliseconds(25), 'duplicate-execution', 'duplicate-execution', [
+                '_group' => $duplicateMailGroupHash,
+                'mailer' => 'smtp',
+                'class' => 'App\\Mail\\DuplicateDigestMail',
+                'subject' => 'Duplicate digest',
+                'to' => 1,
+                'duration' => 2200,
             ]),
         ]);
 
@@ -785,6 +871,14 @@ class NightwatchApiTest extends TestCase
                 'channel' => 'mail',
                 'class' => 'App\\Notifications\\DuplicateScopeAlert',
                 'duration' => 2400,
+            ]),
+            $this->mailEvent($baseTime->addMinutes(6)->addMilliseconds(25), 'duplicate-execution', 'duplicate-execution', [
+                '_group' => $duplicateMailGroupHash,
+                'mailer' => 'smtp',
+                'class' => 'App\\Mail\\DuplicateDigestMail',
+                'subject' => 'Duplicate digest',
+                'to' => 1,
+                'duration' => 2600,
             ]),
         ]);
 
@@ -1043,6 +1137,37 @@ class NightwatchApiTest extends TestCase
             'user' => 'user-1',
             'channel' => 'mail',
             'class' => 'App\\Notifications\\OrderAlert',
+            'duration' => 250,
+            'failed' => false,
+        ], $overrides);
+    }
+
+    /**
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
+    private function mailEvent(CarbonImmutable $time, string $trace, string $executionId, array $overrides = []): array
+    {
+        return array_replace([
+            'v' => 1,
+            't' => 'mail',
+            'timestamp' => $this->floatTimestamp($time),
+            'deploy' => 'deploy-a',
+            'server' => 'api-1',
+            '_group' => 'mail-group-0000000000000000000000000001',
+            'trace_id' => $trace,
+            'execution_source' => 'request',
+            'execution_id' => $executionId,
+            'execution_preview' => 'GET /orders/1',
+            'execution_stage' => 'action',
+            'user' => 'user-1',
+            'mailer' => 'smtp',
+            'class' => 'App\\Mail\\OrderAlertMail',
+            'subject' => 'Order alert',
+            'to' => 1,
+            'cc' => 0,
+            'bcc' => 0,
+            'attachments' => 0,
             'duration' => 250,
             'failed' => false,
         ], $overrides);

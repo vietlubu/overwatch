@@ -1194,6 +1194,18 @@ export const apiBlueprint = {
         detailToken: '{jobId}',
         tables: ['nw_jobs', 'nw_queued_jobs', 'nw_job_attempt_details'],
     },
+    commands: {
+        listEndpoint: '/api/commands',
+        detailEndpoint: '/api/commands/{groupHash}',
+        detailToken: '{groupHash}',
+        tables: ['nw_command_1m', 'nw_command_details', 'nw_executions'],
+    },
+    'scheduled-tasks': {
+        listEndpoint: '/api/scheduled-tasks',
+        detailEndpoint: '/api/scheduled-tasks/{groupHash}',
+        detailToken: '{groupHash}',
+        tables: ['nw_schedule_1m', 'nw_scheduled_task_details', 'nw_executions'],
+    },
     queries: {
         listEndpoint: '/api/queries',
         detailEndpoint: '/api/queries/{groupHash}',

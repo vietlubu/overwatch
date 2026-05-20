@@ -206,6 +206,121 @@ class NightwatchApiTest extends TestCase
         );
     }
 
+    public function test_commands_index_returns_grouped_commands_and_pagination(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson("/api/commands?project_id={$this->projectOneId}&environment=production&search=send-scheduled-notification&per_page=1");
+
+        $response->assertOk();
+        $response->assertJsonPath('kind', 'collection');
+        $response->assertJsonPath('table.rows.0.command.text', 'app:send-scheduled-notification');
+        $response->assertJsonPath('table.rows.0.status.text', 'successful');
+        $response->assertJsonPath('pagination.total', 1);
+        $response->assertJsonCount(1, 'table.rows');
+    }
+
+    public function test_command_show_returns_scoped_group_detail(): void
+    {
+        $this->seedFixtures();
+
+        $groupHash = 'cccccccccccccccccccccccccccccccc';
+        $response = $this->getJson("/api/commands/{$groupHash}?project_id={$this->projectOneId}&environment=production");
+
+        $response->assertOk();
+        $response->assertJsonPath('title', 'app:send-scheduled-notification');
+        $response->assertJsonPath('tags.0.text', 'successful');
+        $response->assertJsonPath('summaryPanels.0.entries.1.value', 'App\\Console\\Commands\\SendScheduledNotification');
+        $response->assertJsonPath('summaryPanels.0.entries.3.value', 'command');
+        $response->assertJsonPath('tables.0.rows.0.run.meta', 'exec cmd-send-scheduled-2');
+        $response->assertJsonPath('tables.0.rows.0.duration.text', '561.67ms');
+        $this->assertStringContainsString('php artisan app:send-scheduled-notification', (string) $response->json('codePanels.0.code'));
+    }
+
+    public function test_command_show_returns_not_found_for_unknown_group(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson("/api/commands/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee?project_id={$this->projectOneId}&environment=production");
+
+        $response->assertNotFound();
+        $response->assertJsonPath(
+            'message',
+            'Nightwatch command group [eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee] was not found.',
+        );
+    }
+
+    public function test_command_show_requires_scope_when_group_hash_is_ambiguous(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson('/api/commands/dddddddddddddddddddddddddddddddd');
+
+        $response->assertStatus(409);
+        $response->assertJsonPath(
+            'message',
+            'Command group hash [dddddddddddddddddddddddddddddddd] exists in multiple project/environment scopes. Pass project_id and environment.',
+        );
+    }
+
+    public function test_scheduled_tasks_index_returns_grouped_tasks_and_pagination(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson("/api/scheduled-tasks?project_id={$this->projectOneId}&environment=production&search=send-scheduled-notification&per_page=1");
+
+        $response->assertOk();
+        $response->assertJsonPath('kind', 'collection');
+        $response->assertJsonPath('table.rows.0.task.text', 'php artisan app:send-scheduled-notification');
+        $response->assertJsonPath('table.rows.0.schedule.text', '*/5 * * * *');
+        $response->assertJsonPath('table.rows.0.status.text', 'processed');
+        $response->assertJsonPath('pagination.total', 1);
+        $response->assertJsonCount(1, 'table.rows');
+    }
+
+    public function test_scheduled_task_show_returns_scoped_group_detail(): void
+    {
+        $this->seedFixtures();
+
+        $groupHash = 'ffffffffffffffffffffffffffffffff';
+        $response = $this->getJson("/api/scheduled-tasks/{$groupHash}?project_id={$this->projectOneId}&environment=production");
+
+        $response->assertOk();
+        $response->assertJsonPath('title', 'php artisan app:send-scheduled-notification');
+        $response->assertJsonPath('tags.0.text', 'processed');
+        $response->assertJsonPath('summaryPanels.0.entries.1.value', 'Asia/Ho_Chi_Minh');
+        $response->assertJsonPath('summaryPanels.1.entries.3.value', '1');
+        $response->assertJsonPath('tables.0.rows.0.run.meta', 'exec sched-send-notification-2');
+        $response->assertJsonPath('tables.0.rows.0.duration.text', '633.66ms');
+        $this->assertStringContainsString('"source": "scheduler"', (string) $response->json('codePanels.0.code'));
+    }
+
+    public function test_scheduled_task_show_returns_not_found_for_unknown_group(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson("/api/scheduled-tasks/12121212121212121212121212121212?project_id={$this->projectOneId}&environment=production");
+
+        $response->assertNotFound();
+        $response->assertJsonPath(
+            'message',
+            'Nightwatch scheduled task group [12121212121212121212121212121212] was not found.',
+        );
+    }
+
+    public function test_scheduled_task_show_requires_scope_when_group_hash_is_ambiguous(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson('/api/scheduled-tasks/abababababababababababababababab');
+
+        $response->assertStatus(409);
+        $response->assertJsonPath(
+            'message',
+            'Scheduled task group hash [abababababababababababababababab] exists in multiple project/environment scopes. Pass project_id and environment.',
+        );
+    }
+
     private function seedFixtures(): void
     {
         if ($this->seeded) {
@@ -216,6 +331,10 @@ class NightwatchApiTest extends TestCase
         $baseTime = CarbonImmutable::now()->subMinutes(40);
         $groupHash = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
         $duplicateGroupHash = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+        $commandGroupHash = 'cccccccccccccccccccccccccccccccc';
+        $duplicateCommandGroupHash = 'dddddddddddddddddddddddddddddddd';
+        $scheduledTaskGroupHash = 'ffffffffffffffffffffffffffffffff';
+        $duplicateScheduledTaskGroupHash = 'abababababababababababababababab';
 
         $this->ingest($this->projectOneTokenHash, [
             $this->userEvent($baseTime, 'user-1', 'Alice Nguyen', 'alice@example.com'),
@@ -237,6 +356,21 @@ class NightwatchApiTest extends TestCase
                 'line' => 12,
                 'handled' => false,
             ]),
+            $this->commandEvent($baseTime->addMinutes(3), 'duplicate-command-run-one', [
+                '_group' => $duplicateCommandGroupHash,
+                'name' => 'nightwatch:rollup',
+                'class' => 'App\\Console\\Commands\\NightwatchRollupCommand',
+                'command' => 'php artisan nightwatch:rollup',
+                'duration' => 312180,
+            ]),
+            $this->scheduledTaskEvent($baseTime->addMinutes(4), 'duplicate-schedule-run-one', [
+                '_group' => $duplicateScheduledTaskGroupHash,
+                'name' => 'php artisan nightwatch:rollup',
+                'cron' => '*/1 * * * *',
+                'timezone' => 'UTC',
+                'status' => 'processed',
+                'duration' => 401840,
+            ]),
             $this->requestEvent($baseTime->addMinutes(10), 'exec-orders-1', [
                 'user' => 'user-1',
                 'url' => 'https://app.test/orders/1',
@@ -251,6 +385,74 @@ class NightwatchApiTest extends TestCase
                 'outgoing_requests' => 0,
                 'cache_events' => 0,
                 'exception_preview' => '',
+            ]),
+            $this->commandEvent($baseTime->addMinutes(11), 'cmd-send-scheduled-1', [
+                '_group' => $commandGroupHash,
+                'execution_source' => 'schedule',
+                'name' => 'app:send-scheduled-notification',
+                'class' => 'App\\Console\\Commands\\SendScheduledNotification',
+                'command' => 'php artisan app:send-scheduled-notification',
+                'duration' => 514980,
+                'queries' => 1,
+                'context' => '{"scope":"scheduler"}',
+            ]),
+            $this->commandEvent($baseTime->addMinutes(12), 'cmd-send-scheduled-2', [
+                '_group' => $commandGroupHash,
+                'execution_source' => 'schedule',
+                'name' => 'app:send-scheduled-notification',
+                'class' => 'App\\Console\\Commands\\SendScheduledNotification',
+                'command' => 'php artisan app:send-scheduled-notification',
+                'duration' => 561670,
+                'queries' => 2,
+                'context' => '{"scope":"scheduler"}',
+            ]),
+            $this->commandEvent($baseTime->addMinutes(13), 'cmd-cache-warm-1', [
+                '_group' => 'edededededededededededededededed',
+                'name' => 'cache:warm-home',
+                'class' => 'App\\Console\\Commands\\WarmHomepageCache',
+                'command' => 'php artisan cache:warm-home',
+                'exit_code' => 1,
+                'duration' => 676720,
+                'exception_preview' => 'Cache warm failed',
+                'context' => '{"scope":"homepage"}',
+            ]),
+            $this->scheduledTaskEvent($baseTime->addMinutes(14), 'sched-send-notification-1', [
+                '_group' => $scheduledTaskGroupHash,
+                'name' => 'php artisan app:send-scheduled-notification',
+                'cron' => '*/5 * * * *',
+                'timezone' => 'Asia/Ho_Chi_Minh',
+                'without_overlapping' => true,
+                'on_one_server' => false,
+                'run_in_background' => false,
+                'status' => 'processed',
+                'duration' => 576520,
+                'jobs_queued' => 0,
+                'context' => '{"source":"scheduler"}',
+            ]),
+            $this->scheduledTaskEvent($baseTime->addMinutes(15), 'sched-send-notification-2', [
+                '_group' => $scheduledTaskGroupHash,
+                'name' => 'php artisan app:send-scheduled-notification',
+                'cron' => '*/5 * * * *',
+                'timezone' => 'Asia/Ho_Chi_Minh',
+                'without_overlapping' => true,
+                'on_one_server' => false,
+                'run_in_background' => false,
+                'status' => 'processed',
+                'duration' => 633660,
+                'jobs_queued' => 1,
+                'context' => '{"source":"scheduler"}',
+            ]),
+            $this->scheduledTaskEvent($baseTime->addMinutes(16), 'sched-cache-prune-1', [
+                '_group' => 'cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd',
+                'name' => 'php artisan cache:prune-stale-tags',
+                'cron' => '*/15 * * * *',
+                'timezone' => 'Asia/Ho_Chi_Minh',
+                'without_overlapping' => false,
+                'on_one_server' => true,
+                'run_in_background' => true,
+                'status' => 'skipped',
+                'duration' => 185120,
+                'context' => '{"source":"scheduler"}',
             ]),
             $this->queuedJobEvent($baseTime->addMinutes(8), 'duplicate-trace-one', 'duplicate-execution', 'duplicate-job', [
                 'name' => 'App\\Jobs\\DuplicateScopeJob',
@@ -379,6 +581,21 @@ class NightwatchApiTest extends TestCase
                 'duration' => 1600,
                 'exceptions' => 1,
                 'exception_preview' => 'Duplicate scope exception',
+            ]),
+            $this->commandEvent($baseTime->addMinutes(3), 'duplicate-command-run-two', [
+                '_group' => $duplicateCommandGroupHash,
+                'name' => 'nightwatch:rollup',
+                'class' => 'App\\Console\\Commands\\NightwatchRollupCommand',
+                'command' => 'php artisan nightwatch:rollup',
+                'duration' => 401840,
+            ]),
+            $this->scheduledTaskEvent($baseTime->addMinutes(4), 'duplicate-schedule-run-two', [
+                '_group' => $duplicateScheduledTaskGroupHash,
+                'name' => 'php artisan nightwatch:rollup',
+                'cron' => '*/1 * * * *',
+                'timezone' => 'UTC',
+                'status' => 'processed',
+                'duration' => 390110,
             ]),
             $this->queuedJobEvent($baseTime->addMinutes(7), 'duplicate-trace-two', 'duplicate-execution', 'duplicate-job', [
                 'name' => 'App\\Jobs\\DuplicateScopeJob',
@@ -740,6 +957,88 @@ class NightwatchApiTest extends TestCase
             'peak_memory_usage' => 3072,
             'exception_preview' => '',
             'context' => '{"worker":"default"}',
+        ], $overrides);
+    }
+
+    /**
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
+    private function commandEvent(CarbonImmutable $time, string $trace, array $overrides = []): array
+    {
+        return array_replace([
+            'v' => 1,
+            't' => 'command',
+            'timestamp' => $this->floatTimestamp($time),
+            'deploy' => 'deploy-a',
+            'server' => 'worker-1',
+            '_group' => 'command-group-000000000000000000001',
+            'trace_id' => $trace,
+            'class' => 'App\\Console\\Commands\\SyncOrders',
+            'name' => 'orders:sync',
+            'command' => 'php artisan orders:sync --force',
+            'exit_code' => 0,
+            'duration' => 2100,
+            'bootstrap' => 300,
+            'action' => 1600,
+            'terminating' => 200,
+            'exceptions' => 0,
+            'logs' => 0,
+            'queries' => 0,
+            'lazy_loads' => 0,
+            'jobs_queued' => 0,
+            'mail' => 0,
+            'notifications' => 0,
+            'outgoing_requests' => 0,
+            'files_read' => 0,
+            'files_written' => 0,
+            'cache_events' => 0,
+            'hydrated_models' => 0,
+            'peak_memory_usage' => 2048,
+            'exception_preview' => '',
+            'context' => '{"scope":"backfill"}',
+        ], $overrides);
+    }
+
+    /**
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
+    private function scheduledTaskEvent(CarbonImmutable $time, string $trace, array $overrides = []): array
+    {
+        return array_replace([
+            'v' => 1,
+            't' => 'scheduled-task',
+            'timestamp' => $this->floatTimestamp($time),
+            'deploy' => 'deploy-a',
+            'server' => 'scheduler-1',
+            '_group' => 'schedule-group-00000000000000000001',
+            'trace_id' => $trace,
+            'name' => 'orders:dispatch-sync',
+            'cron' => '*/5 * * * *',
+            'timezone' => 'UTC',
+            'repeat_seconds' => 0,
+            'without_overlapping' => true,
+            'on_one_server' => true,
+            'run_in_background' => false,
+            'even_in_maintenance_mode' => false,
+            'status' => 'processed',
+            'duration' => 1800,
+            'exceptions' => 0,
+            'logs' => 0,
+            'queries' => 0,
+            'lazy_loads' => 0,
+            'jobs_queued' => 0,
+            'mail' => 0,
+            'notifications' => 0,
+            'outgoing_requests' => 0,
+            'files_read' => 0,
+            'files_written' => 0,
+            'cache_events' => 0,
+            'hydrated_models' => 0,
+            'peak_memory_usage' => 1024,
+            'exception_preview' => '',
+            'context' => '{"source":"scheduler"}',
         ], $overrides);
     }
 

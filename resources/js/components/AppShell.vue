@@ -137,7 +137,7 @@ const currentProjectName = computed(() => {
     const projectId = scopedQuery.value.project_id ?? null;
 
     if (!projectId) {
-        return 'Terrace Dev';
+        return 'All projects';
     }
 
     const project = projects.value.find((entry) => String(entry.id) === String(projectId));

@@ -246,7 +246,7 @@ const sharedExceptionDetail = {
             caption: 'Derived from nw_exceptions + nw_request_details.',
             entries: [
                 info('First seen', 'May 20, 2026, 11:23:40 +07:00'),
-                info('Project', 'Terrace Dev'),
+                info('Project', 'Overwatch'),
                 info('Trace id', 'req_01JTD6Y2N2K4R2'),
                 info('Request', 'POST <span class="value-strong">/graphql</span>'),
                 info('User', 'CGBS12'),

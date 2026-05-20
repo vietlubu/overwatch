@@ -1,6 +1,9 @@
 <script setup>
 import { computed, ref } from 'vue';
-import { RouterLink } from 'vue-router';
+import { RouterLink, useRoute } from 'vue-router';
+import HighlightedCode from './HighlightedCode.vue';
+import { guessCodeLanguage } from '../utils/highlightCode';
+import { mergeScopeIntoTarget } from '../utils/scopeQuery';
 
 const props = defineProps({
     title: {
@@ -25,6 +28,7 @@ const props = defineProps({
     },
 });
 
+const route = useRoute();
 const query = ref('');
 
 const normalized = (value) => {
@@ -34,6 +38,16 @@ const normalized = (value) => {
 
     return { text: value };
 };
+
+const isHighlightedCell = (column, value) => {
+    if (column.kind === 'highlight') {
+        return true;
+    }
+
+    return Boolean(value?.language || guessCodeLanguage(value?.text));
+};
+
+const resolveRowTarget = (target) => mergeScopeIntoTarget(target, route.query);
 
 const filteredRows = computed(() => {
     const keyword = query.value.trim().toLowerCase();
@@ -73,10 +87,18 @@ const filteredRows = computed(() => {
                         <template v-if="column.kind === 'primary'">
                             <component
                                 :is="row.href ? RouterLink : 'div'"
-                                :to="row.href"
+                                :to="row.href ? resolveRowTarget(row.href) : undefined"
                                 class="row-link"
                             >
-                                <div class="table-cell-primary">{{ normalized(row[column.key]).text }}</div>
+                                <div class="table-cell-primary">
+                                    <HighlightedCode
+                                        v-if="isHighlightedCell(column, normalized(row[column.key]))"
+                                        :code="normalized(row[column.key]).text"
+                                        :language="normalized(row[column.key]).language"
+                                        inline
+                                    />
+                                    <template v-else>{{ normalized(row[column.key]).text }}</template>
+                                </div>
                                 <div v-if="normalized(row[column.key]).meta" class="table-cell-meta">
                                     {{ normalized(row[column.key]).meta }}
                                 </div>
@@ -90,6 +112,13 @@ const filteredRows = computed(() => {
                         >
                             {{ normalized(row[column.key]).text }}
                         </span>
+
+                        <HighlightedCode
+                            v-else-if="column.kind === 'highlight'"
+                            :code="normalized(row[column.key]).text"
+                            :language="normalized(row[column.key]).language"
+                            inline
+                        />
 
                         <span v-else-if="column.kind === 'code'" class="table-cell-code">
                             {{ normalized(row[column.key]).text }}

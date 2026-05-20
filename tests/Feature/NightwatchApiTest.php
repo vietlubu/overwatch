@@ -58,6 +58,19 @@ class NightwatchApiTest extends TestCase
         $response->assertJsonCount(1, 'table.rows');
     }
 
+    public function test_projects_index_returns_available_projects_and_environments(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson('/api/projects');
+
+        $response->assertOk();
+        $response->assertJsonPath('projects.0.name', 'API Project');
+        $response->assertJsonPath('projects.0.slug', 'api-project');
+        $response->assertJsonPath('projects.0.environments.0', 'production');
+        $response->assertJsonPath('projects.1.name', 'Other Project');
+    }
+
     public function test_request_show_returns_scoped_execution_detail(): void
     {
         $this->seedFixtures();
@@ -611,6 +624,108 @@ class NightwatchApiTest extends TestCase
         );
     }
 
+    public function test_users_index_returns_grouped_users_and_pagination(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson("/api/users?project_id={$this->projectOneId}&environment=production&search=Alice&per_page=1");
+
+        $response->assertOk();
+        $response->assertJsonPath('kind', 'collection');
+        $response->assertJsonPath('table.rows.0.user.text', 'Alice Nguyen');
+        $response->assertJsonPath('table.rows.0.requests.text', '3');
+        $response->assertJsonPath('table.rows.0.exceptions.text', '2');
+        $response->assertJsonPath('pagination.total', 1);
+        $response->assertJsonCount(1, 'table.rows');
+    }
+
+    public function test_user_show_returns_scoped_user_detail(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson("/api/users/user-1?project_id={$this->projectOneId}&environment=production");
+
+        $response->assertOk();
+        $response->assertJsonPath('title', 'Alice Nguyen');
+        $response->assertJsonPath('tags.0.text', '3 requests');
+        $response->assertJsonPath('tags.1.text', '2 exceptions');
+        $response->assertJsonPath('summaryPanels.0.entries.1.value', 'user-1');
+        $response->assertJsonPath('tables.0.rows.0.route.text', 'GET /orders/{order}');
+        $response->assertJsonPath('tables.0.rows.0.requests.text', '2');
+        $response->assertJsonPath('tables.1.rows.0.request.text', 'GET /orders/{order}');
+        $response->assertJsonPath('tables.1.rows.0.duration.text', '2.40ms');
+    }
+
+    public function test_user_show_returns_not_found_for_unknown_user(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson("/api/users/missing-user?project_id={$this->projectOneId}&environment=production");
+
+        $response->assertNotFound();
+        $response->assertJsonPath('message', 'Nightwatch user [missing-user] was not found.');
+    }
+
+    public function test_user_show_requires_scope_when_user_is_ambiguous(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson('/api/users/user-1');
+
+        $response->assertStatus(409);
+        $response->assertJsonPath(
+            'message',
+            'User [user-1] exists in multiple project/environment scopes. Pass project_id and environment.',
+        );
+    }
+
+    public function test_logs_index_returns_recent_logs_and_pagination(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson("/api/logs?project_id={$this->projectOneId}&environment=production&search=Remote%20API&per_page=1");
+
+        $response->assertOk();
+        $response->assertJsonPath('kind', 'collection');
+        $response->assertJsonPath('table.rows.0.log.text', 'Remote API is slow');
+        $response->assertJsonPath('table.rows.0.level.text', 'warning');
+        $response->assertJsonPath('table.rows.0.source.text', 'request');
+        $response->assertJsonPath('pagination.total', 1);
+        $response->assertJsonCount(1, 'table.rows');
+    }
+
+    public function test_log_show_returns_scoped_log_detail(): void
+    {
+        $this->seedFixtures();
+
+        $logId = DB::table('nw_logs')
+            ->where('project_id', $this->projectOneId)
+            ->where('environment', 'production')
+            ->where('message', 'Remote API is slow')
+            ->value('id');
+
+        $response = $this->getJson("/api/logs/{$logId}?project_id={$this->projectOneId}&environment=production");
+
+        $response->assertOk();
+        $response->assertJsonPath('title', 'Remote API is slow');
+        $response->assertJsonPath('tags.0.text', 'warning');
+        $response->assertJsonPath('tags.1.text', 'request');
+        $response->assertJsonPath('summaryPanels.0.entries.1.value', 'exec-orders-2');
+        $response->assertJsonPath('summaryPanels.0.entries.2.value', 'GET /orders/{order}');
+        $this->assertStringContainsString('"provider": "payments"', (string) $response->json('codePanels.0.code'));
+        $this->assertStringContainsString('"channel": "stack"', (string) $response->json('codePanels.1.code'));
+    }
+
+    public function test_log_show_returns_not_found_for_unknown_log(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson("/api/logs/999999?project_id={$this->projectOneId}&environment=production");
+
+        $response->assertNotFound();
+        $response->assertJsonPath('message', 'Nightwatch log [999999] was not found.');
+    }
+
     private function seedFixtures(): void
     {
         if ($this->seeded) {
@@ -946,6 +1061,7 @@ class NightwatchApiTest extends TestCase
             ]),
             $this->exceptionEvent($baseTime->addMinutes(35)->addMilliseconds(10), 'exec-orders-3', 'exec-orders-3', [
                 '_group' => $groupHash,
+                'user' => 'user-2',
                 'message' => 'Charge gateway timeout',
                 'file' => 'app/Services/BillingService.php',
                 'line' => 51,
@@ -988,6 +1104,7 @@ class NightwatchApiTest extends TestCase
 
         $this->ingest($this->projectTwoTokenHash, [
             $this->userEvent($baseTime, 'user-9', 'Carol Vu', 'carol@example.com'),
+            $this->userEvent($baseTime->addSecond(), 'user-1', 'Alice Other', 'alice@other-project.test'),
             $this->requestEvent($baseTime->addMinutes(5), 'duplicate-execution', [
                 'user' => 'user-9',
                 'url' => 'https://other.test/duplicate-two',

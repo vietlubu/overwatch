@@ -4,13 +4,18 @@ use App\Http\Controllers\Api\NightwatchCommandController;
 use App\Http\Controllers\Api\NightwatchCacheController;
 use App\Http\Controllers\Api\NightwatchExceptionController;
 use App\Http\Controllers\Api\NightwatchJobController;
+use App\Http\Controllers\Api\NightwatchLogController;
 use App\Http\Controllers\Api\NightwatchMailController;
 use App\Http\Controllers\Api\NightwatchNotificationController;
 use App\Http\Controllers\Api\NightwatchOutgoingRequestController;
+use App\Http\Controllers\Api\NightwatchProjectController;
 use App\Http\Controllers\Api\NightwatchQueryController;
 use App\Http\Controllers\Api\NightwatchRequestController;
 use App\Http\Controllers\Api\NightwatchScheduledTaskController;
+use App\Http\Controllers\Api\NightwatchUserController;
 use Illuminate\Support\Facades\Route;
+
+Route::get('/projects', [NightwatchProjectController::class, 'index']);
 
 Route::get('/requests', [NightwatchRequestController::class, 'index']);
 Route::get('/requests/{executionId}', [NightwatchRequestController::class, 'show']);
@@ -41,3 +46,9 @@ Route::get('/cache/{groupHash}', [NightwatchCacheController::class, 'show']);
 
 Route::get('/outgoing-requests', [NightwatchOutgoingRequestController::class, 'index']);
 Route::get('/outgoing-requests/{groupHash}', [NightwatchOutgoingRequestController::class, 'show']);
+
+Route::get('/users', [NightwatchUserController::class, 'index']);
+Route::get('/users/{externalUserId}', [NightwatchUserController::class, 'show']);
+
+Route::get('/logs', [NightwatchLogController::class, 'index']);
+Route::get('/logs/{logId}', [NightwatchLogController::class, 'show']);

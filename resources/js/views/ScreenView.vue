@@ -7,10 +7,19 @@ import TrendPlot from '../components/TrendPlot.vue';
 import DataTable from '../components/DataTable.vue';
 import KeyValueGrid from '../components/KeyValueGrid.vue';
 import TimelineStack from '../components/TimelineStack.vue';
+import HighlightedCode from '../components/HighlightedCode.vue';
 import { getDetail, getScreen } from '../data/mockApi';
 import { fetchLiveDetail, fetchLiveScreen, isLiveScreen } from '../data/liveScreens';
 
 const props = defineProps({
+    screenKey: {
+        type: String,
+        default: '',
+    },
+    detailId: {
+        type: String,
+        default: '',
+    },
     filters: {
         type: Array,
         default: () => [],
@@ -231,7 +240,7 @@ watch(
                 <div v-if="detail.codePanels?.length" class="detail-stack">
                     <section v-for="panel in detail.codePanels" :key="panel.title" class="code-panel">
                         <div class="code-caption">{{ panel.title }}</div>
-                        <pre>{{ panel.code }}</pre>
+                        <HighlightedCode :code="panel.code" :language="panel.language" />
                     </section>
                 </div>
             </div>

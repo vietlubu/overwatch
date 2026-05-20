@@ -35,12 +35,18 @@
   - detail cards with metadata, traces, and timelines
 - Collections are mostly list + metrics.
 - Details are metadata-first, with code or timeline blocks below.
+- Density target is intentionally compact:
+  - sidebar rows use narrow vertical rhythm
+  - top filters feel like segmented terminal controls, not pill buttons
+  - cards and tables use small radii and low-shadow surfaces
+  - panels should read as flat monitoring blocks rather than floating dashboard widgets
 
 ## Typography
 
 - Use a mono voice across the app for coherence with the terminal theme.
 - Large headings remain bold and simple.
 - Labels rely on uppercase + tracking instead of heavy ornamentation.
+- The type hierarchy should stay restrained; the sample feels compact because large titles are balanced by tight spacing around them.
 
 ## Interaction Model
 

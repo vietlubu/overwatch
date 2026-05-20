@@ -1236,6 +1236,18 @@ export const apiBlueprint = {
         detailToken: '{groupHash}',
         tables: ['nw_outgoing_requests', 'nw_outgoing_host_1m'],
     },
+    users: {
+        listEndpoint: '/api/users',
+        detailEndpoint: '/api/users/{externalUserId}',
+        detailToken: '{externalUserId}',
+        tables: ['nw_users', 'nw_request_details', 'nw_exceptions'],
+    },
+    logs: {
+        listEndpoint: '/api/logs',
+        detailEndpoint: '/api/logs/{logId}',
+        detailToken: '{logId}',
+        tables: ['nw_logs'],
+    },
 };
 
 export const getScreen = (screenKey) => screens[screenKey] ?? null;

@@ -25,7 +25,7 @@ final class NightwatchPartitionManager
         }
 
         $baseMonth = CarbonImmutable::instance($occurredAt)->startOfMonth();
-        $monthsAhead = (int) Config::get('nightwatch.storage.partition_precreate_months', 2);
+        $monthsAhead = (int) Config::get('overwatch.storage.partition_precreate_months', 2);
 
         for ($offset = 0; $offset < $monthsAhead; $offset++) {
             $this->createRawPartition($baseMonth->addMonths($offset));

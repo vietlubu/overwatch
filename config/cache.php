@@ -99,6 +99,10 @@ return [
             ],
         ],
 
+        'nightwatch-self-test-failing' => [
+            'driver' => 'nightwatch-self-test-failing',
+        ],
+
     ],
 
     /*

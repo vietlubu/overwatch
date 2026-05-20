@@ -19,8 +19,8 @@ final class NightwatchCleanupService
      */
     public function cleanup(): array
     {
-        $retentionDays = (int) Config::get('nightwatch.storage.retention_days', 30);
-        $rollupRetentionDays = (int) Config::get('nightwatch.storage.rollup_retention_days', 180);
+        $retentionDays = (int) Config::get('overwatch.storage.retention_days', 30);
+        $rollupRetentionDays = (int) Config::get('overwatch.storage.rollup_retention_days', 180);
         $factsCutoff = CarbonImmutable::now()->subDays($retentionDays);
         $rollupCutoff = CarbonImmutable::now()->subDays($rollupRetentionDays);
 

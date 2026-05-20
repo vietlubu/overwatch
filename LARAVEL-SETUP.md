@@ -1,85 +1,92 @@
-# Laravel Nightwatch Ingest Server
+# Laravel Nightwatch Ingest Setup
 
-Tài liệu này mô tả cách dùng repo root này như Nightwatch ingest server chính. Các project Laravel được monitor nằm ở repo khác và sẽ gửi events vào server này thông qua Nightwatch.
+Tai lieu nay mo ta chi tiet architecture hien tai cua Overwatch va cach van hanh no nhu ingest server cho `laravel/nightwatch`.
 
-Thư mục [`poc/`](./poc/README.md) chỉ là prototype/reference để debug nhanh protocol khi cần, không phải luồng triển khai mặc định.
+## Vai Tro Cua Repo
 
-## 🎯 Mục đích
+Repo nay la:
 
-Server này nhận events từ các project Laravel khác thông qua Nightwatch package và:
+- TCP listener nhan framed payload Nightwatch
+- parser + ingestor luu vao database
+- noi quan ly `project`, `environment`, `ingest token`
+- noi chay local self-test harness de verify end-to-end
 
-- ✅ Parse Nightwatch TCP protocol
-- ✅ Store events vào database
-- ✅ Cung cấp API để query metrics
-- ✅ Build analytics dashboard
-- ✅ Alert & notifications
+Repo nay khong con dua tren flow HTTP auth/ingest cu. `poc/` van ton tai chi de debug/reference.
 
-## 🧭 Vai trò của repo này
+## Architecture
 
-Repo này đóng vai trò là ingest endpoint dùng chung:
+```text
+External Laravel Apps
+        |
+        | TCP (LENGTH:VERSION:TOKEN:DATA)
+        v
+Overwatch Laravel App
+  - nightwatch:listen
+  - NightwatchEventIngestor
+  - nw_* tables
+  - rollups / cleanup commands
+```
 
-- nhận data từ một hoặc nhiều Laravel apps khác
-- parse và persist dữ liệu ingest
-- cung cấp nền tảng để build API, metrics, và dashboard
+## Config Split
 
-Nó không phải là monitored app. Monitored app là các project Laravel bên ngoài repo này, được cấu hình để gửi Nightwatch data về đây.
+### `config/overwatch.php`
 
-## 🚀 Quick Start
+Dung cho ingest server:
 
-### 1. Cài đặt dependencies
+- `OVERWATCH_TCP_HOST`
+- `OVERWATCH_TCP_PORT`
+- `OVERWATCH_TCP_BACKLOG`
+- `OVERWATCH_TCP_ACCEPT_TIMEOUT`
+- `OVERWATCH_TCP_READ_TIMEOUT`
+- `OVERWATCH_TCP_MAX_FRAME_BYTES`
+- `OVERWATCH_RETENTION_DAYS`
+- `OVERWATCH_ROLLUP_RETENTION_DAYS`
+- `OVERWATCH_PARTITION_PRECREATE_MONTHS`
+- `OVERWATCH_SELF_TEST_*`
+
+### `config/nightwatch.php`
+
+Dung cho Nightwatch client:
+
+- `NIGHTWATCH_ENABLED`
+- `NIGHTWATCH_TOKEN`
+- `NIGHTWATCH_INGEST_URI`
+- `NIGHTWATCH_DEPLOY`
+- `NIGHTWATCH_SERVER`
+- sampling va filtering options
+
+Trong repo nay, phan config client chu yeu phuc vu self-test subprocesses. Listener va orchestrator command tu tat Nightwatch de tranh self-ingest loop.
+
+## Boot Quy Trinh Co Ban
+
+### 1. Setup app
 
 ```bash
 composer install
-```
-
-### 2. Cấu hình environment
-
-```bash
 cp .env.example .env
 php artisan key:generate
-```
-
-### 3. Cấu hình database
-
-**.env** (SQLite - local development):
-
-```env
-DB_CONNECTION=sqlite
-```
-
-**.env** (PostgreSQL - shared/prod environments):
-
-```bash
-createdb overwatch
-```
-
-```env
-DB_CONNECTION=pgsql
-DB_HOST=127.0.0.1
-DB_PORT=5432
-DB_DATABASE=overwatch
-DB_USERNAME=postgres
-DB_PASSWORD=
-DB_SCHEMA=public
-```
-
-### 4. Run migrations
-
-```bash
 php artisan migrate
 ```
 
-### 5. Start server
+### 2. Start listener va web app
 
 ```bash
+php artisan nightwatch:listen
 php artisan serve
 ```
 
-Server sẽ chạy tại: `http://127.0.0.1:8000`
+### 3. Tao tenant va ingest key
 
-## 🔗 Kết nối project Laravel khác vào ingest server này
+```bash
+php artisan nightwatch:project:create demo-app --name="Demo App"
+php artisan nightwatch:key:create demo-app --environment=local
+```
 
-Trong project Laravel được monitor:
+Command tao key se output `NIGHTWATCH_TOKEN` va `NIGHTWATCH_INGEST_URI` de copy sang monitored app.
+
+## Monitored App Setup
+
+Trong app Laravel duoc monitor:
 
 ```bash
 composer require laravel/nightwatch
@@ -88,471 +95,108 @@ php artisan vendor:publish --tag=nightwatch-config
 
 ```env
 NIGHTWATCH_ENABLED=true
-NIGHTWATCH_TOKEN=dev-token
+NIGHTWATCH_TOKEN=...secret from overwatch...
 NIGHTWATCH_INGEST_URI=127.0.0.1:2407
-NIGHTWATCH_BASE_URL=http://localhost:8000
-NIGHTWATCH_SERVER=my-laravel-app
+NIGHTWATCH_DEPLOY=local
+NIGHTWATCH_SERVER=demo-app-web-1
 ```
 
-Sau đó clear config và chạy project được monitor:
+Luu y:
+
+- khong can `NIGHTWATCH_BASE_URL` cho flow nay
+- token la secret theo `project/environment`
+- Overwatch validate token truoc khi ingest
+
+## Local Self-Test Harness
+
+Command:
 
 ```bash
-php artisan config:clear
-php artisan serve --port=8001
+php artisan nightwatch:test-events --timeout=25
 ```
 
-Từ project đó, trigger request / command / query để Nightwatch gửi dữ liệu về ingest server ở repo này.
+Harness se:
 
-## 🏗️ Architecture
+1. Tao key tam cho environment `self-test-{run-id}`.
+2. Spawn `nightwatch:listen` voi `NIGHTWATCH_ENABLED=false`.
+3. Spawn 2 HTTP helper servers va queue workers voi env Nightwatch rieng.
+4. Trigger matrix request / command / schedule / queue / mail / notification / cache / outgoing request / query / exception.
+5. Verify summary row counts trong `nw_raw_events` va detail tables.
 
-```
-┌─────────────────────┐
-│  External Laravel   │
-│  Apps (Nightwatch)  │
-└──────────┬──────────┘
-           │ TCP Socket
-           │ Protocol: LENGTH:VERSION:TOKEN:DATA
-           ▼
-┌─────────────────────┐
-│  Ingest Server      │
-│  (This Repository)  │
-│                     │
-│  ┌───────────────┐  │
-│  │ TCP Server    │  │◄─── Nhận events
-│  │ (Port 2407)   │  │
-│  └───────┬───────┘  │
-│          │          │
-│  ┌───────▼───────┐  │
-│  │ Event Parser  │  │◄─── Parse protocol
-│  └───────┬───────┘  │
-│          │          │
-│  ┌───────▼───────┐  │
-│  │ Database      │  │◄─── Store events
-│  │ (PostgreSQL)  │  │
-│  └───────────────┘  │
-│                     │
-│  ┌───────────────┐  │
-│  │ HTTP API      │  │◄─── Query & Analytics
-│  │ Dashboard     │  │
-│  └───────────────┘  │
-└─────────────────────┘
-```
+### Tai sao self-test chi track surface test?
 
-## 📋 Database Schema
+Nightwatch khong co whitelist config chinh thuc cho "chi route/command/task nay". Overwatch giai quyet nhu sau:
 
-### Events Table
+- helper subprocesses dat tat ca sample rate mac dinh ve `0`
+- route test opt-in bang `Sample::always()`
+- outgoing stub route dung `Sample::never()` de khong tao request noise
+- command test goi `Nightwatch::sample(1)`
+- scheduled task test dung `ConsoleSample::always()`
+- reject hooks trong `AppServiceProvider` bo qua query/cache/outgoing/mail/notification/queued-job khong co marker self-test
 
-Lưu trữ tất cả Nightwatch events:
+Ket qua la Overwatch chi nhan cac event do bo self-test chu dong tao.
 
-```sql
-CREATE TABLE events (
-    id BIGSERIAL PRIMARY KEY,
-    uuid VARCHAR(36) NOT NULL,
-    type VARCHAR(50) NOT NULL,
-    hostname VARCHAR(255),
-    "timestamp" BIGINT,
-    payload JSONB,
-    created_at TIMESTAMPTZ,
-    updated_at TIMESTAMPTZ
-);
+## Coverage Matrix
 
-CREATE INDEX idx_events_type ON events (type);
-CREATE INDEX idx_events_hostname ON events (hostname);
-CREATE INDEX idx_events_timestamp ON events ("timestamp");
-CREATE INDEX idx_events_uuid ON events (uuid);
-```
+### Live end-to-end
 
-### Request Metrics Table
+- `user`
+- `request`
+- `command`
+- `scheduled-task`
+- `queued-job`
+- `job-attempt`
+- `exception`
+- `query`
+- `outgoing-request`
+- `log`
+- `mail`
+- `notification`
+- `cache-event`
 
-Aggregated metrics cho HTTP requests:
+### Chi tiet dang verify
 
-```sql
-CREATE TABLE request_metrics (
-    id BIGSERIAL PRIMARY KEY,
-    hostname VARCHAR(255),
-    date DATE,
-    hour INTEGER,
-    total_requests INTEGER DEFAULT 0,
-    avg_duration DECIMAL(10,2),
-    max_duration DECIMAL(10,2),
-    status_2xx INTEGER DEFAULT 0,
-    status_4xx INTEGER DEFAULT 0,
-    status_5xx INTEGER DEFAULT 0,
-    created_at TIMESTAMPTZ,
-    updated_at TIMESTAMPTZ,
-    UNIQUE (hostname, date, hour)
-);
-```
+- request payload states: `present`, `absent`, `not_enabled`, `unsupported_content_type`
+- scheduled-task statuses: `processed`, `skipped`, `failed`
+- job-attempt statuses: `processed`, `released`, `failed`
+- cache-event types: `hit`, `miss`, `write`, `delete`, `write-failure`, `delete-failure`
 
-## 🔌 API Endpoints
+## Van Hanh
 
-### 1. Authentication Endpoint
-
-**POST** `/api/agent-auth`
-
-Nightwatch agent authentication.
-
-**Headers:**
-
-```
-Authorization: Bearer {NIGHTWATCH_TOKEN}
-Content-Type: application/json
-```
-
-**Response:**
-
-```json
-{
-    "token": "access-token",
-    "expires_in": 3600,
-    "refresh_in": 300,
-    "ingest_url": "http://localhost:8000/api/ingest"
-}
-```
-
-### 2. HTTP Ingest Endpoint
-
-**POST** `/api/ingest`
-
-Nhận events qua HTTP (alternative to TCP).
-
-**Headers:**
-
-```
-Authorization: Bearer {access-token}
-Content-Type: application/json
-Content-Encoding: gzip (optional)
-```
-
-**Body:**
-
-```json
-[
-    {
-        "type": "request_started",
-        "uuid": "...",
-        "method": "GET",
-        "uri": "/api/users"
-    }
-]
-```
-
-### 3. Query Events API
-
-**GET** `/api/events`
-
-Query stored events.
-
-**Parameters:**
-
-- `type` - Event type filter
-- `hostname` - Hostname filter
-- `from` - Start timestamp
-- `to` - End timestamp
-- `limit` - Results limit (default: 100)
-
-**Example:**
+### Manual TCP ping
 
 ```bash
-curl "http://localhost:8000/api/events?type=request_finished&limit=50"
+echo -n '15:v1:abc1234:PING' | nc 127.0.0.1 2407
 ```
 
-**Response:**
+Expected response:
 
-```json
-{
-    "data": [
-        {
-            "id": 1,
-            "type": "request_finished",
-            "payload": {...},
-            "created_at": "2024-01-20T10:00:00Z"
-        }
-    ],
-    "meta": {
-        "total": 1234,
-        "per_page": 50,
-        "current_page": 1
-    }
-}
+```text
+2:OK
 ```
 
-### 4. Metrics API
-
-**GET** `/api/metrics/requests`
-
-Get aggregated request metrics.
-
-**Parameters:**
-
-- `hostname` - Hostname filter
-- `from` - Start date (Y-m-d)
-- `to` - End date (Y-m-d)
-
-**Response:**
-
-```json
-{
-    "data": [
-        {
-            "date": "2024-01-20",
-            "hour": 10,
-            "total_requests": 1500,
-            "avg_duration": 123.45,
-            "status_2xx": 1400,
-            "status_5xx": 5
-        }
-    ]
-}
-```
-
-## 🛠️ Commands
-
-### Start TCP Server
+### Focused verification
 
 ```bash
-php artisan nightwatch:listen
+php artisan test --filter 'Nightwatch(Ingestor|ProjectCommands|ListenCommand|SelfTestHarness)Test'
+php artisan nightwatch:test-events --timeout=25
 ```
 
-Khởi động TCP socket server để nhận events từ Nightwatch agents.
-
-Options:
-
-- `--host` - Bind address (default: 127.0.0.1)
-- `--port` - Port number (default: 2407)
-
-### Process Events Queue
+### Maintenance
 
 ```bash
-php artisan queue:work
+php artisan nightwatch:rollup
+php artisan nightwatch:cleanup
 ```
 
-Process queued events (nếu sử dụng queue).
+## Database Notes
 
-### Aggregate Metrics
+Nightwatch data duoc luu vao cac bang `nw_*`, gom:
 
-```bash
-php artisan nightwatch:aggregate
-```
+- dimensions: `nw_projects`, `nw_ingest_tokens`, `nw_servers`, `nw_deployments`, `nw_users`
+- raw/fact: `nw_raw_events`, `nw_executions`, `nw_request_details`, `nw_command_details`, `nw_job_attempt_details`, `nw_scheduled_task_details`, `nw_exceptions`, `nw_queries`, `nw_outgoing_requests`, `nw_queued_jobs`, `nw_logs`, `nw_mail_events`, `nw_notification_events`, `nw_cache_events`, `nw_jobs`
+- rollups: `nw_request_route_1m`, `nw_exception_group_1m`, `nw_query_group_1m`, `nw_outgoing_host_1m`, `nw_job_queue_1m`, `nw_command_1m`, `nw_schedule_1m`, `nw_log_level_1m`
 
-Tính toán metrics từ raw events.
+## POC Reference
 
-## 📊 Dashboard
-
-Access dashboard tại: `http://localhost:8000/dashboard`
-
-Features:
-
-- 📈 Real-time request rate
-- ⏱️ Response time distribution
-- 🚨 Error rate monitoring
-- 💾 Database query performance
-- 🔍 Event search & filtering
-
-## 🔧 Configuration
-
-### .env Variables
-
-```env
-# Application
-APP_NAME="Nightwatch Ingest"
-APP_ENV=local
-APP_DEBUG=true
-APP_URL=http://localhost:8000
-
-# Database
-DB_CONNECTION=sqlite
-
-# Switch to PostgreSQL when moving beyond local development:
-# DB_CONNECTION=pgsql
-# DB_HOST=127.0.0.1
-# DB_PORT=5432
-# DB_DATABASE=overwatch
-# DB_USERNAME=postgres
-# DB_PASSWORD=
-# DB_SCHEMA=public
-
-# Nightwatch Configuration
-NIGHTWATCH_TOKEN=your-secret-token
-NIGHTWATCH_TCP_HOST=127.0.0.1
-NIGHTWATCH_TCP_PORT=2407
-NIGHTWATCH_HTTP_PORT=8000
-
-# Event Processing
-NIGHTWATCH_USE_QUEUE=false
-NIGHTWATCH_RETENTION_DAYS=30
-
-# Queue (if enabled)
-QUEUE_CONNECTION=database
-```
-
-### config/nightwatch.php
-
-```php
-return [
-    'token' => env('NIGHTWATCH_TOKEN'),
-
-    'tcp' => [
-        'host' => env('NIGHTWATCH_TCP_HOST', '127.0.0.1'),
-        'port' => env('NIGHTWATCH_TCP_PORT', 2407),
-    ],
-
-    'storage' => [
-        'driver' => 'database', // database, elasticsearch
-        'retention_days' => env('NIGHTWATCH_RETENTION_DAYS', 30),
-    ],
-
-    'processing' => [
-        'use_queue' => env('NIGHTWATCH_USE_QUEUE', false),
-        'batch_size' => 1000,
-    ],
-];
-```
-
-## 🧪 Testing
-
-### Run tests
-
-```bash
-php artisan test
-```
-
-### Feature tests
-
-```bash
-php artisan test --filter=NightwatchIngestTest
-```
-
-### Test với POC client
-
-```bash
-cd ..
-npm test
-```
-
-## 📦 Deployment
-
-### Production setup
-
-```bash
-# 1. Clone và install
-git clone <repo>
-cd ingest
-composer install --no-dev --optimize-autoloader
-
-# 2. Configure
-cp .env.example .env
-php artisan key:generate
-
-# 3. Database
-php artisan migrate --force
-
-# 4. Optimize
-php artisan config:cache
-php artisan route:cache
-php artisan view:cache
-
-# 5. Start services
-# Use supervisor for TCP server
-supervisorctl start nightwatch-tcp
-
-# Use nginx/apache for HTTP
-# Point to /public directory
-```
-
-### Supervisor configuration
-
-`/etc/supervisor/conf.d/nightwatch-tcp.conf`:
-
-```ini
-[program:nightwatch-tcp]
-process_name=%(program_name)s
-command=php /path/to/ingest/artisan nightwatch:listen
-autostart=true
-autorestart=true
-user=www-data
-redirect_stderr=true
-stdout_logfile=/var/log/nightwatch-tcp.log
-```
-
-### Nginx configuration
-
-```nginx
-server {
-    listen 80;
-    server_name nightwatch.yourdomain.com;
-    root /path/to/ingest/public;
-
-    add_header X-Frame-Options "SAMEORIGIN";
-    add_header X-Content-Type-Options "nosniff";
-
-    index index.php;
-
-    charset utf-8;
-
-    location / {
-        try_files $uri $uri/ /index.php?$query_string;
-    }
-
-    location ~ \.php$ {
-        fastcgi_pass unix:/var/run/php/php8.2-fpm.sock;
-        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
-        include fastcgi_params;
-    }
-
-    location ~ /\.(?!well-known).* {
-        deny all;
-    }
-}
-```
-
-## 🔐 Security
-
-### Authentication
-
-- Token-based authentication cho agents
-- API tokens cho dashboard access
-- Rate limiting trên các endpoints
-
-### Best practices
-
-- ✅ Validate tất cả input data
-- ✅ Sanitize event payloads trước khi lưu
-- ✅ Use prepared statements (Eloquent tự động)
-- ✅ Rate limit API endpoints
-- ✅ HTTPS trong production
-- ✅ Regular security updates
-
-## 🚀 Performance
-
-### Optimization tips
-
-1. **Database indexing**: Đã có indexes trên các columns thường query
-2. **Caching**: Sử dụng Redis cho session và cache
-3. **Queue processing**: Enable queue cho event processing
-4. **Database**: Tối ưu PostgreSQL với index, partitioning, và retention jobs cho time-series data
-5. **Horizontal scaling**: Multiple workers cho TCP server
-
-### Monitoring
-
-- Laravel Telescope (development)
-- Laravel Horizon (queue monitoring)
-- Custom metrics dashboard
-
-## 📚 Resources
-
-- [Laravel Documentation](https://laravel.com/docs)
-- [Nightwatch Package](https://github.com/laravel/nightwatch)
-- [Parent README](../README.md)
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create feature branch
-3. Commit changes
-4. Push to branch
-5. Create Pull Request
-
-## 📄 License
-
-MIT
+Neu can doi chieu voi prototype Node.js, xem [`poc/README.md`](./poc/README.md). Tai lieu do chi de debug/reference, khong phai source of truth cho luong ingest hien tai.

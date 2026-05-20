@@ -11,7 +11,9 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        $middleware->validateCsrfTokens(except: [
+            trim((string) env('OVERWATCH_SELF_TEST_ROUTE_PREFIX', '__nightwatch-test'), '/').'/*',
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

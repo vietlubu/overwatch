@@ -58,8 +58,8 @@ class NightwatchKeyCreateCommand extends Command
 
         $advertiseUri = sprintf(
             '%s:%d',
-            config('nightwatch.tcp.host', '127.0.0.1'),
-            (int) config('nightwatch.tcp.port', 2407),
+            config('overwatch.tcp.host', '127.0.0.1'),
+            (int) config('overwatch.tcp.port', 2407),
         );
 
         $this->warn('Store this secret now. It will not be shown again.');

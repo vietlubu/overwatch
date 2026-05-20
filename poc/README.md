@@ -4,6 +4,8 @@ Node.js prototype/reference server để test hoặc debug Nightwatch ingest pro
 
 Luồng chính của project vẫn là Laravel ingest server ở root repo. Nếu bạn đang setup hệ thống ingest thật để nhận data từ các project Laravel khác, hãy bắt đầu từ [README root](../README.md) hoặc [GETTING-STARTED.md](../GETTING-STARTED.md).
 
+Lưu ý: tài liệu trong `poc/` mô tả flow prototype riêng, bao gồm HTTP auth/ingest để debug nhanh. Nó không phải source of truth cho flow TCP ingest hiện tại của Overwatch Laravel app.
+
 ## 🎯 Mục đích
 
 POC server này dùng để:

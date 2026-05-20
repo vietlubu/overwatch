@@ -321,6 +321,65 @@ class NightwatchApiTest extends TestCase
         );
     }
 
+    public function test_queries_index_returns_grouped_queries_and_pagination(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson("/api/queries?project_id={$this->projectOneId}&environment=production&search=activity_logs&per_page=1");
+
+        $response->assertOk();
+        $response->assertJsonPath('kind', 'collection');
+        $response->assertJsonPath('table.rows.0.query.meta', 'app/Models/ActivityLog.php:44');
+        $response->assertJsonPath('table.rows.0.connection.text', 'pgsql / write');
+        $response->assertJsonPath('table.rows.0.calls.text', '2');
+        $response->assertJsonPath('pagination.total', 1);
+        $response->assertJsonCount(1, 'table.rows');
+    }
+
+    public function test_query_show_returns_scoped_group_detail(): void
+    {
+        $this->seedFixtures();
+
+        $groupHash = '99999999999999999999999999999999';
+        $response = $this->getJson("/api/queries/{$groupHash}?project_id={$this->projectOneId}&environment=production");
+
+        $response->assertOk();
+        $this->assertStringContainsString('insert into activity_logs', (string) $response->json('title'));
+        $response->assertJsonPath('tags.0.text', 'write');
+        $response->assertJsonPath('tags.1.text', 'pgsql');
+        $response->assertJsonPath('summaryPanels.0.entries.0.value', 'app/Models/ActivityLog.php');
+        $response->assertJsonPath('summaryPanels.0.entries.2.value', 'write');
+        $response->assertJsonPath('tables.0.rows.0.call.meta', 'GET /orders/{order} · exec-orders-3');
+        $response->assertJsonPath('tables.0.rows.0.duration.text', '26.27ms');
+        $this->assertStringContainsString('activity_logs', (string) $response->json('codePanels.0.code'));
+    }
+
+    public function test_query_show_returns_not_found_for_unknown_group(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson("/api/queries/56565656565656565656565656565656?project_id={$this->projectOneId}&environment=production");
+
+        $response->assertNotFound();
+        $response->assertJsonPath(
+            'message',
+            'Nightwatch query group [56565656565656565656565656565656] was not found.',
+        );
+    }
+
+    public function test_query_show_requires_scope_when_group_hash_is_ambiguous(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson('/api/queries/78787878787878787878787878787878');
+
+        $response->assertStatus(409);
+        $response->assertJsonPath(
+            'message',
+            'Query group hash [78787878787878787878787878787878] exists in multiple project/environment scopes. Pass project_id and environment.',
+        );
+    }
+
     private function seedFixtures(): void
     {
         if ($this->seeded) {
@@ -335,6 +394,8 @@ class NightwatchApiTest extends TestCase
         $duplicateCommandGroupHash = 'dddddddddddddddddddddddddddddddd';
         $scheduledTaskGroupHash = 'ffffffffffffffffffffffffffffffff';
         $duplicateScheduledTaskGroupHash = 'abababababababababababababababab';
+        $queryGroupHash = '99999999999999999999999999999999';
+        $duplicateQueryGroupHash = '78787878787878787878787878787878';
 
         $this->ingest($this->projectOneTokenHash, [
             $this->userEvent($baseTime, 'user-1', 'Alice Nguyen', 'alice@example.com'),
@@ -485,6 +546,15 @@ class NightwatchApiTest extends TestCase
                 'sql' => 'select * from "payments" where "order_id" = ?',
                 'duration' => 480,
             ]),
+            $this->queryEvent($baseTime->addMinutes(20)->addMilliseconds(11), 'exec-orders-2', 'exec-orders-2', [
+                '_group' => $queryGroupHash,
+                'sql' => 'insert into activity_logs (`user_id`, `type`, `data`, `updated_at`, `created_at`) values (?, ?, ?, ?, ?)',
+                'file' => 'app/Models/ActivityLog.php',
+                'line' => 44,
+                'duration' => 6620,
+                'connection' => 'pgsql',
+                'connection_type' => 'write',
+            ]),
             $this->queuedJobEvent($baseTime->addMinutes(21), 'job-trace-sync-order', 'exec-orders-2', 'job-sync-order', [
                 'name' => 'App\\Jobs\\SyncOrder',
                 'queue' => 'orders',
@@ -544,6 +614,15 @@ class NightwatchApiTest extends TestCase
                 'queue' => 'billing',
                 'duration' => 110,
             ]),
+            $this->queryEvent($baseTime->addMinutes(35)->addMilliseconds(5), 'exec-orders-3', 'exec-orders-3', [
+                '_group' => $queryGroupHash,
+                'sql' => 'insert into activity_logs (`user_id`, `type`, `data`, `updated_at`, `created_at`) values (?, ?, ?, ?, ?)',
+                'file' => 'app/Models/ActivityLog.php',
+                'line' => 44,
+                'duration' => 26270,
+                'connection' => 'pgsql',
+                'connection_type' => 'write',
+            ]),
             $this->jobAttemptEvent($baseTime->addMinutes(37), 'job-trace-send-receipt', 'job-attempt-send-receipt', 'job-send-receipt', [
                 'name' => 'App\\Jobs\\SendReceipt',
                 'connection' => 'sqs',
@@ -597,6 +676,15 @@ class NightwatchApiTest extends TestCase
                 'status' => 'processed',
                 'duration' => 390110,
             ]),
+            $this->queryEvent($baseTime->addMinutes(5)->addMilliseconds(10), 'duplicate-execution', 'duplicate-execution', [
+                '_group' => $duplicateQueryGroupHash,
+                'sql' => 'update jobs set reserved_at = ? where id = ?',
+                'file' => 'app/Queue/Worker.php',
+                'line' => 120,
+                'duration' => 80900,
+                'connection' => 'pgsql',
+                'connection_type' => 'write',
+            ]),
             $this->queuedJobEvent($baseTime->addMinutes(7), 'duplicate-trace-two', 'duplicate-execution', 'duplicate-job', [
                 'name' => 'App\\Jobs\\DuplicateScopeJob',
                 'queue' => 'shared',
@@ -614,6 +702,18 @@ class NightwatchApiTest extends TestCase
                 'file' => 'app/Services/ScopeService.php',
                 'line' => 12,
                 'handled' => false,
+            ]),
+        ]);
+
+        $this->ingest($this->projectOneTokenHash, [
+            $this->queryEvent($baseTime->addMinutes(6), 'duplicate-execution', 'duplicate-execution', [
+                '_group' => $duplicateQueryGroupHash,
+                'sql' => 'update jobs set reserved_at = ? where id = ?',
+                'file' => 'app/Queue/Worker.php',
+                'line' => 120,
+                'duration' => 70200,
+                'connection' => 'pgsql',
+                'connection_type' => 'write',
             ]),
         ]);
     }

@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\NightwatchCommandController;
 use App\Http\Controllers\Api\NightwatchExceptionController;
 use App\Http\Controllers\Api\NightwatchJobController;
+use App\Http\Controllers\Api\NightwatchQueryController;
 use App\Http\Controllers\Api\NightwatchRequestController;
 use App\Http\Controllers\Api\NightwatchScheduledTaskController;
 use Illuminate\Support\Facades\Route;
@@ -21,3 +22,6 @@ Route::get('/commands/{groupHash}', [NightwatchCommandController::class, 'show']
 
 Route::get('/scheduled-tasks', [NightwatchScheduledTaskController::class, 'index']);
 Route::get('/scheduled-tasks/{groupHash}', [NightwatchScheduledTaskController::class, 'show']);
+
+Route::get('/queries', [NightwatchQueryController::class, 'index']);
+Route::get('/queries/{groupHash}', [NightwatchQueryController::class, 'show']);

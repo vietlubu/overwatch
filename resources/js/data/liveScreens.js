@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { apiBlueprint } from './mockApi';
 
-const liveScreenKeys = new Set(['requests', 'exceptions', 'jobs', 'commands', 'scheduled-tasks']);
+const liveScreenKeys = new Set(['requests', 'exceptions', 'jobs', 'commands', 'scheduled-tasks', 'queries']);
 
 const pickScope = (query = {}) => {
     const scope = {};

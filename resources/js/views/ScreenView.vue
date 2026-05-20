@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute, RouterLink } from 'vue-router';
 import PageHeader from '../components/PageHeader.vue';
 import MetricCard from '../components/MetricCard.vue';
@@ -8,6 +8,7 @@ import DataTable from '../components/DataTable.vue';
 import KeyValueGrid from '../components/KeyValueGrid.vue';
 import TimelineStack from '../components/TimelineStack.vue';
 import { getDetail, getScreen } from '../data/mockApi';
+import { fetchLiveDetail, fetchLiveScreen, isLiveScreen } from '../data/liveScreens';
 
 const props = defineProps({
     filters: {
@@ -24,18 +25,106 @@ const emit = defineEmits(['update:active-filter']);
 
 const route = useRoute();
 
-const screen = computed(() => getScreen(String(route.params.screenKey ?? '')));
-const detail = computed(() => {
-    if (!route.params.detailId) {
-        return null;
+const screenKey = computed(() => String(route.params.screenKey ?? ''));
+const detailId = computed(() => (route.params.detailId ? String(route.params.detailId) : null));
+
+const loading = ref(false);
+const error = ref(null);
+const screen = ref(null);
+const detail = ref(null);
+
+let requestToken = 0;
+
+const buildErrorState = (reason) => {
+    const status = reason?.response?.status ?? null;
+    const message = reason?.response?.data?.message ?? reason?.message ?? 'Unable to load this screen.';
+
+    return {
+        status,
+        message,
+    };
+};
+
+const loadState = async () => {
+    const currentToken = ++requestToken;
+    const currentScreenKey = screenKey.value;
+    const currentDetailId = detailId.value;
+    const baseScreen = getScreen(currentScreenKey);
+
+    screen.value = baseScreen;
+    detail.value = currentDetailId ? getDetail(currentScreenKey, currentDetailId) : null;
+    error.value = null;
+
+    if (!isLiveScreen(currentScreenKey)) {
+        return;
     }
 
-    return getDetail(String(route.params.screenKey ?? ''), String(route.params.detailId));
-});
+    loading.value = true;
+
+    try {
+        if (currentDetailId) {
+            const payload = await fetchLiveDetail(currentScreenKey, currentDetailId, {
+                routeQuery: route.query,
+            });
+
+            if (currentToken !== requestToken) {
+                return;
+            }
+
+            detail.value = payload;
+        } else {
+            const payload = await fetchLiveScreen(currentScreenKey, {
+                range: props.activeFilter || '24h',
+                routeQuery: route.query,
+            });
+
+            if (currentToken !== requestToken) {
+                return;
+            }
+
+            screen.value = payload;
+        }
+    } catch (reason) {
+        if (currentToken !== requestToken) {
+            return;
+        }
+
+        error.value = buildErrorState(reason);
+    } finally {
+        if (currentToken === requestToken) {
+            loading.value = false;
+        }
+    }
+};
+
+watch(
+    () => [screenKey.value, detailId.value, props.activeFilter, route.fullPath],
+    () => {
+        loadState();
+    },
+    { immediate: true },
+);
 </script>
 
 <template>
-    <template v-if="screen && !detail">
+    <section v-if="loading" class="placeholder-card">
+        <div>
+            <div class="empty-mark">[~]</div>
+            <h2 class="empty-title">Loading telemetry</h2>
+            <p class="empty-copy">Fetching the latest request and exception data from Overwatch.</p>
+        </div>
+    </section>
+
+    <section v-else-if="error" class="placeholder-card error-card">
+        <div>
+            <div class="empty-mark">[x]</div>
+            <h2 class="empty-title">API load failed</h2>
+            <p class="empty-copy">{{ error.message }}</p>
+            <p v-if="error.status" class="table-caption">HTTP {{ error.status }}</p>
+        </div>
+    </section>
+
+    <template v-else-if="screen && !detail">
         <PageHeader
             :eyebrow="screen.eyebrow"
             :title="screen.title"

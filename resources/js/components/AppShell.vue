@@ -13,7 +13,7 @@ const props = defineProps({
     },
 });
 
-const activeFilter = ref(props.filters[0]?.key ?? '1h');
+const activeFilter = ref(props.filters.find((filter) => filter.key === '24h')?.key ?? props.filters[0]?.key ?? '24h');
 
 const setActiveFilter = (filterKey) => {
     activeFilter.value = filterKey;

@@ -777,6 +777,11 @@ select {
     text-align: center;
 }
 
+.error-card .empty-mark,
+.error-card .empty-title {
+    color: var(--red);
+}
+
 .empty-mark {
     margin-bottom: 14px;
     color: var(--mauve);

@@ -29,22 +29,26 @@ php artisan key:generate
 
 ### 3. Cấu hình database
 
-**.env** (SQLite - default):
+**.env** (SQLite - local development):
 
 ```env
 DB_CONNECTION=sqlite
-# DB_DATABASE đã được set tự động
 ```
 
-**.env** (MySQL):
+**.env** (PostgreSQL - shared/prod environments):
+
+```bash
+createdb overwatch
+```
 
 ```env
-DB_CONNECTION=mysql
+DB_CONNECTION=pgsql
 DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_DATABASE=nightwatch_ingest
-DB_USERNAME=root
+DB_PORT=5432
+DB_DATABASE=overwatch
+DB_USERNAME=postgres
 DB_PASSWORD=
+DB_SCHEMA=public
 ```
 
 ### 4. Run migrations
@@ -86,7 +90,7 @@ Server sẽ chạy tại: `http://127.0.0.1:8000`
 │          │          │
 │  ┌───────▼───────┐  │
 │  │ Database      │  │◄─── Store events
-│  │ (SQLite/MySQL)│  │
+│  │ (PostgreSQL)  │  │
 │  └───────────────┘  │
 │                     │
 │  ┌───────────────┐  │
@@ -104,20 +108,20 @@ Lưu trữ tất cả Nightwatch events:
 
 ```sql
 CREATE TABLE events (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    id BIGSERIAL PRIMARY KEY,
     uuid VARCHAR(36) NOT NULL,
     type VARCHAR(50) NOT NULL,
     hostname VARCHAR(255),
-    timestamp INTEGER,
-    payload JSON,
-    created_at TIMESTAMP,
-    updated_at TIMESTAMP,
-
-    INDEX idx_type (type),
-    INDEX idx_hostname (hostname),
-    INDEX idx_timestamp (timestamp),
-    INDEX idx_uuid (uuid)
+    "timestamp" BIGINT,
+    payload JSONB,
+    created_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ
 );
+
+CREATE INDEX idx_events_type ON events (type);
+CREATE INDEX idx_events_hostname ON events (hostname);
+CREATE INDEX idx_events_timestamp ON events ("timestamp");
+CREATE INDEX idx_events_uuid ON events (uuid);
 ```
 
 ### Request Metrics Table
@@ -126,7 +130,7 @@ Aggregated metrics cho HTTP requests:
 
 ```sql
 CREATE TABLE request_metrics (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    id BIGSERIAL PRIMARY KEY,
     hostname VARCHAR(255),
     date DATE,
     hour INTEGER,
@@ -136,10 +140,9 @@ CREATE TABLE request_metrics (
     status_2xx INTEGER DEFAULT 0,
     status_4xx INTEGER DEFAULT 0,
     status_5xx INTEGER DEFAULT 0,
-    created_at TIMESTAMP,
-    updated_at TIMESTAMP,
-
-    UNIQUE KEY unique_metric (hostname, date, hour)
+    created_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ,
+    UNIQUE (hostname, date, hour)
 );
 ```
 
@@ -321,7 +324,15 @@ APP_URL=http://localhost:8000
 
 # Database
 DB_CONNECTION=sqlite
-DB_DATABASE=/absolute/path/to/database.sqlite
+
+# Switch to PostgreSQL when moving beyond local development:
+# DB_CONNECTION=pgsql
+# DB_HOST=127.0.0.1
+# DB_PORT=5432
+# DB_DATABASE=overwatch
+# DB_USERNAME=postgres
+# DB_PASSWORD=
+# DB_SCHEMA=public
 
 # Nightwatch Configuration
 NIGHTWATCH_TOKEN=your-secret-token
@@ -349,7 +360,7 @@ return [
     ],
 
     'storage' => [
-        'driver' => 'database', // database, clickhouse, etc.
+        'driver' => 'database', // database, elasticsearch
         'retention_days' => env('NIGHTWATCH_RETENTION_DAYS', 30),
     ],
 
@@ -481,7 +492,7 @@ server {
 1. **Database indexing**: Đã có indexes trên các columns thường query
 2. **Caching**: Sử dụng Redis cho session và cache
 3. **Queue processing**: Enable queue cho event processing
-4. **Database**: Sử dụng ClickHouse cho time-series data
+4. **Database**: Tối ưu PostgreSQL với index, partitioning, và retention jobs cho time-series data
 5. **Horizontal scaling**: Multiple workers cho TCP server
 
 ### Monitoring

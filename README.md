@@ -50,8 +50,8 @@ composer install
 cp .env.example .env
 php artisan key:generate
 
-# 3. Configure database (SQLite default)
-# Already configured in .env
+# 3. Configure database (SQLite for local, PostgreSQL for deployment)
+# Local development is ready with SQLite in .env
 
 # 4. Run migrations
 php artisan migrate
@@ -108,7 +108,7 @@ POC server chạy tại:
 │          │          │
 │  ┌───────▼───────┐  │
 │  │ Database      │  │◄─── Store events
-│  │ (SQLite/MySQL)│  │
+│  │ (PostgreSQL)  │  │
 │  └───────────────┘  │
 │                     │
 │  ┌───────────────┐  │
@@ -171,6 +171,15 @@ APP_URL=http://localhost:8000
 
 # Database
 DB_CONNECTION=sqlite
+
+# Use PostgreSQL outside local development:
+# DB_CONNECTION=pgsql
+# DB_HOST=127.0.0.1
+# DB_PORT=5432
+# DB_DATABASE=overwatch
+# DB_USERNAME=postgres
+# DB_PASSWORD=
+# DB_SCHEMA=public
 
 # Nightwatch Configuration
 NIGHTWATCH_TOKEN=dev-token
@@ -349,7 +358,7 @@ php artisan migrate:fresh
 - [ ] Real-time metrics aggregation
 - [ ] Alert system
 - [ ] Multiple server support
-- [ ] ClickHouse integration
+- [ ] PostgreSQL analytics optimization
 - [ ] Grafana/Prometheus exporters
 
 ## 🎯 Use Cases

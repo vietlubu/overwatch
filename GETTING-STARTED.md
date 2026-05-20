@@ -180,6 +180,15 @@ TCP_PORT=2407
 # Database
 DB_CONNECTION=sqlite
 
+# Switch to PostgreSQL for shared/prod environments:
+# DB_CONNECTION=pgsql
+# DB_HOST=127.0.0.1
+# DB_PORT=5432
+# DB_DATABASE=overwatch
+# DB_USERNAME=postgres
+# DB_PASSWORD=
+# DB_SCHEMA=public
+
 # Nightwatch
 NIGHTWATCH_TOKEN=dev-token
 NIGHTWATCH_TCP_HOST=127.0.0.1

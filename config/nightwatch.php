@@ -55,7 +55,7 @@ return [
     */
 
     'storage' => [
-        // Storage driver: database, clickhouse, elasticsearch
+        // Storage driver: database, elasticsearch
         'driver' => env('NIGHTWATCH_STORAGE_DRIVER', 'database'),
 
         // Data retention period in days (0 = keep forever)

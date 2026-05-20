@@ -1,6 +1,8 @@
 # Nightwatch POC Ingest Server
 
-Node.js prototype server để test Laravel Nightwatch integration.
+Node.js prototype/reference server để test hoặc debug Nightwatch ingest protocol.
+
+Luồng chính của project vẫn là Laravel ingest server ở root repo. Nếu bạn đang setup hệ thống ingest thật để nhận data từ các project Laravel khác, hãy bắt đầu từ [README root](../README.md) hoặc [GETTING-STARTED.md](../GETTING-STARTED.md).
 
 ## 🎯 Mục đích
 
@@ -9,6 +11,8 @@ POC server này dùng để:
 - ✅ Verify integration với Laravel apps
 - ✅ Understand data flow
 - ✅ Quick development & debugging
+
+Không dùng `poc/` như production path mặc định của repo này.
 
 ## 🚀 Quick Start
 
@@ -47,6 +51,16 @@ Expected output:
 ✅ TCP message sent successfully
 ```
 
+## 📋 Khi nào nên dùng POC này
+
+Dùng `poc/` khi bạn cần:
+
+- debug nhanh TCP protocol
+- verify auth / ingest payload độc lập với Laravel server chính
+- đối chiếu behavior với implementation Laravel ở root repo
+
+Nếu mục tiêu là triển khai ingest server chính, quay lại [README root](../README.md).
+
 ## 📋 Environment Variables
 
 ```bash
@@ -74,6 +88,8 @@ NIGHTWATCH_INGEST_URI=127.0.0.1:2407
 NIGHTWATCH_BASE_URL=http://localhost:3000
 NIGHTWATCH_SERVER=my-laravel-app
 ```
+
+`NIGHTWATCH_BASE_URL` ở đây trỏ vào POC HTTP server để phục vụ flow debug/reference. Với luồng chính của repo, monitored app nên trỏ về Laravel ingest server ở root repo.
 
 ### 3. Khởi động Laravel
 
@@ -265,13 +281,12 @@ NIGHTWATCH_REQUEST_SAMPLE_RATE=1.0
 - `start-dev.sh` - Auto start both POC and Laravel app
 - `package.json` - NPM configuration
 
-## 🔄 Migration to Production
+## 🔄 Quay lại luồng chính
 
-POC server là prototype. Để production, sử dụng Laravel ingest server:
+POC server là prototype/reference. Khi cần ingest server chính cho môi trường thật, dùng Laravel app ở root repo:
 
 ```bash
 cd ../
-# Laravel ingest server files ở root directory
 php artisan serve
 ```
 

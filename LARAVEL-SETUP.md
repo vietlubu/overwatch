@@ -1,16 +1,28 @@
 # Laravel Nightwatch Ingest Server
 
-Production-ready Laravel application để nhận và xử lý monitoring data từ Laravel Nightwatch package.
+Tài liệu này mô tả cách dùng repo root này như Nightwatch ingest server chính. Các project Laravel được monitor nằm ở repo khác và sẽ gửi events vào server này thông qua Nightwatch.
+
+Thư mục [`poc/`](./poc/README.md) chỉ là prototype/reference để debug nhanh protocol khi cần, không phải luồng triển khai mặc định.
 
 ## 🎯 Mục đích
 
-Server này nhận events từ Laravel applications thông qua Nightwatch package và:
+Server này nhận events từ các project Laravel khác thông qua Nightwatch package và:
 
 - ✅ Parse Nightwatch TCP protocol
 - ✅ Store events vào database
 - ✅ Cung cấp API để query metrics
 - ✅ Build analytics dashboard
 - ✅ Alert & notifications
+
+## 🧭 Vai trò của repo này
+
+Repo này đóng vai trò là ingest endpoint dùng chung:
+
+- nhận data từ một hoặc nhiều Laravel apps khác
+- parse và persist dữ liệu ingest
+- cung cấp nền tảng để build API, metrics, và dashboard
+
+Nó không phải là monitored app. Monitored app là các project Laravel bên ngoài repo này, được cấu hình để gửi Nightwatch data về đây.
 
 ## 🚀 Quick Start
 
@@ -65,19 +77,45 @@ php artisan serve
 
 Server sẽ chạy tại: `http://127.0.0.1:8000`
 
+## 🔗 Kết nối project Laravel khác vào ingest server này
+
+Trong project Laravel được monitor:
+
+```bash
+composer require laravel/nightwatch
+php artisan vendor:publish --tag=nightwatch-config
+```
+
+```env
+NIGHTWATCH_ENABLED=true
+NIGHTWATCH_TOKEN=dev-token
+NIGHTWATCH_INGEST_URI=127.0.0.1:2407
+NIGHTWATCH_BASE_URL=http://localhost:8000
+NIGHTWATCH_SERVER=my-laravel-app
+```
+
+Sau đó clear config và chạy project được monitor:
+
+```bash
+php artisan config:clear
+php artisan serve --port=8001
+```
+
+Từ project đó, trigger request / command / query để Nightwatch gửi dữ liệu về ingest server ở repo này.
+
 ## 🏗️ Architecture
 
 ```
 ┌─────────────────────┐
-│  Laravel Apps       │
-│  (with Nightwatch)  │
+│  External Laravel   │
+│  Apps (Nightwatch)  │
 └──────────┬──────────┘
            │ TCP Socket
            │ Protocol: LENGTH:VERSION:TOKEN:DATA
            ▼
 ┌─────────────────────┐
 │  Ingest Server      │
-│  (This Laravel App) │
+│  (This Repository)  │
 │                     │
 │  ┌───────────────┐  │
 │  │ TCP Server    │  │◄─── Nhận events

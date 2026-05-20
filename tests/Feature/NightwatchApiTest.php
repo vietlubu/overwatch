@@ -380,6 +380,63 @@ class NightwatchApiTest extends TestCase
         );
     }
 
+    public function test_notifications_index_returns_grouped_notifications_and_pagination(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson("/api/notifications?project_id={$this->projectOneId}&environment=production&search=PostViewed&per_page=1");
+
+        $response->assertOk();
+        $response->assertJsonPath('kind', 'collection');
+        $response->assertJsonPath('table.rows.0.notification.text', 'App\\Notifications\\PostViewed');
+        $response->assertJsonPath('table.rows.0.channel.text', 'database');
+        $response->assertJsonPath('pagination.total', 1);
+        $response->assertJsonCount(1, 'table.rows');
+    }
+
+    public function test_notification_show_returns_scoped_group_detail(): void
+    {
+        $this->seedFixtures();
+
+        $groupHash = '31313131313131313131313131313131';
+        $response = $this->getJson("/api/notifications/{$groupHash}?project_id={$this->projectOneId}&environment=production");
+
+        $response->assertOk();
+        $response->assertJsonPath('title', 'App\\Notifications\\PostViewed');
+        $response->assertJsonPath('tags.0.text', 'database');
+        $response->assertJsonPath('tags.1.text', 'successful');
+        $response->assertJsonPath('summaryPanels.0.entries.0.value', 'database');
+        $response->assertJsonPath('summaryPanels.1.entries.0.value', 'exec-orders-3');
+        $response->assertJsonPath('tables.0.rows.0.event.meta', 'GET /orders/{order} · exec-orders-3');
+        $response->assertJsonPath('tables.0.rows.0.duration.text', '14.42ms');
+    }
+
+    public function test_notification_show_returns_not_found_for_unknown_group(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson("/api/notifications/34343434343434343434343434343434?project_id={$this->projectOneId}&environment=production");
+
+        $response->assertNotFound();
+        $response->assertJsonPath(
+            'message',
+            'Nightwatch notification group [34343434343434343434343434343434] was not found.',
+        );
+    }
+
+    public function test_notification_show_requires_scope_when_group_hash_is_ambiguous(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson('/api/notifications/32323232323232323232323232323232');
+
+        $response->assertStatus(409);
+        $response->assertJsonPath(
+            'message',
+            'Notification group hash [32323232323232323232323232323232] exists in multiple project/environment scopes. Pass project_id and environment.',
+        );
+    }
+
     private function seedFixtures(): void
     {
         if ($this->seeded) {
@@ -396,6 +453,8 @@ class NightwatchApiTest extends TestCase
         $duplicateScheduledTaskGroupHash = 'abababababababababababababababab';
         $queryGroupHash = '99999999999999999999999999999999';
         $duplicateQueryGroupHash = '78787878787878787878787878787878';
+        $notificationGroupHash = '31313131313131313131313131313131';
+        $duplicateNotificationGroupHash = '32323232323232323232323232323232';
 
         $this->ingest($this->projectOneTokenHash, [
             $this->userEvent($baseTime, 'user-1', 'Alice Nguyen', 'alice@example.com'),
@@ -572,7 +631,6 @@ class NightwatchApiTest extends TestCase
             ]),
             $this->logEvent($baseTime->addMinutes(20)->addMilliseconds(20), 'exec-orders-2', 'exec-orders-2'),
             $this->outgoingRequestEvent($baseTime->addMinutes(20)->addMilliseconds(30), 'exec-orders-2', 'exec-orders-2'),
-            $this->notificationEvent($baseTime->addMinutes(20)->addMilliseconds(40), 'exec-orders-2', 'exec-orders-2'),
             $this->cacheEvent($baseTime->addMinutes(20)->addMilliseconds(50), 'exec-orders-2', 'exec-orders-2'),
             $this->exceptionEvent($baseTime->addMinutes(20)->addMilliseconds(60), 'exec-orders-2', 'exec-orders-2', [
                 '_group' => $groupHash,
@@ -606,6 +664,7 @@ class NightwatchApiTest extends TestCase
                 'status_code' => 500,
                 'duration' => 1800,
                 'queries' => 2,
+                'notifications' => 1,
                 'exception_preview' => 'Charge gateway timeout',
             ]),
             $this->queuedJobEvent($baseTime->addMinutes(36), 'job-trace-send-receipt', 'exec-orders-3', 'job-send-receipt', [
@@ -622,6 +681,18 @@ class NightwatchApiTest extends TestCase
                 'duration' => 26270,
                 'connection' => 'pgsql',
                 'connection_type' => 'write',
+            ]),
+            $this->notificationEvent($baseTime->addMinutes(20)->addMilliseconds(40), 'exec-orders-2', 'exec-orders-2', [
+                '_group' => $notificationGroupHash,
+                'channel' => 'database',
+                'class' => 'App\\Notifications\\PostViewed',
+                'duration' => 7910,
+            ]),
+            $this->notificationEvent($baseTime->addMinutes(35)->addMilliseconds(20), 'exec-orders-3', 'exec-orders-3', [
+                '_group' => $notificationGroupHash,
+                'channel' => 'database',
+                'class' => 'App\\Notifications\\PostViewed',
+                'duration' => 14420,
             ]),
             $this->jobAttemptEvent($baseTime->addMinutes(37), 'job-trace-send-receipt', 'job-attempt-send-receipt', 'job-send-receipt', [
                 'name' => 'App\\Jobs\\SendReceipt',
@@ -645,6 +716,12 @@ class NightwatchApiTest extends TestCase
                 'line' => 51,
                 'handled' => false,
                 'trace' => '[{"file":"app/Services/BillingService.php:51","source":"BillingService->charge()","code":{"51":"throw new RuntimeException(\"Charge gateway timeout\");"}}]',
+            ]),
+            $this->notificationEvent($baseTime->addMinutes(6)->addMilliseconds(20), 'duplicate-execution', 'duplicate-execution', [
+                '_group' => $duplicateNotificationGroupHash,
+                'channel' => 'mail',
+                'class' => 'App\\Notifications\\DuplicateScopeAlert',
+                'duration' => 1800,
             ]),
         ]);
 
@@ -702,6 +779,12 @@ class NightwatchApiTest extends TestCase
                 'file' => 'app/Services/ScopeService.php',
                 'line' => 12,
                 'handled' => false,
+            ]),
+            $this->notificationEvent($baseTime->addMinutes(6)->addMilliseconds(20), 'duplicate-execution', 'duplicate-execution', [
+                '_group' => $duplicateNotificationGroupHash,
+                'channel' => 'mail',
+                'class' => 'App\\Notifications\\DuplicateScopeAlert',
+                'duration' => 2400,
             ]),
         ]);
 

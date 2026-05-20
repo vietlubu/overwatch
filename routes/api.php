@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\NightwatchCommandController;
+use App\Http\Controllers\Api\NightwatchCacheController;
 use App\Http\Controllers\Api\NightwatchExceptionController;
 use App\Http\Controllers\Api\NightwatchJobController;
 use App\Http\Controllers\Api\NightwatchMailController;
@@ -33,3 +34,6 @@ Route::get('/notifications/{groupHash}', [NightwatchNotificationController::clas
 
 Route::get('/mail', [NightwatchMailController::class, 'index']);
 Route::get('/mail/{groupHash}', [NightwatchMailController::class, 'show']);
+
+Route::get('/cache', [NightwatchCacheController::class, 'index']);
+Route::get('/cache/{groupHash}', [NightwatchCacheController::class, 'show']);

@@ -1212,6 +1212,24 @@ export const apiBlueprint = {
         detailToken: '{groupHash}',
         tables: ['nw_query_group_1m', 'nw_queries'],
     },
+    notifications: {
+        listEndpoint: '/api/notifications',
+        detailEndpoint: '/api/notifications/{groupHash}',
+        detailToken: '{groupHash}',
+        tables: ['nw_notification_events'],
+    },
+    mail: {
+        listEndpoint: '/api/mail',
+        detailEndpoint: '/api/mail/{groupHash}',
+        detailToken: '{groupHash}',
+        tables: ['nw_mail_events'],
+    },
+    cache: {
+        listEndpoint: '/api/cache',
+        detailEndpoint: '/api/cache/{groupHash}',
+        detailToken: '{groupHash}',
+        tables: ['nw_cache_events'],
+    },
 };
 
 export const getScreen = (screenKey) => screens[screenKey] ?? null;

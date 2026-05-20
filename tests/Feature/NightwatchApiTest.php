@@ -494,6 +494,65 @@ class NightwatchApiTest extends TestCase
         );
     }
 
+    public function test_cache_index_returns_grouped_keys_and_pagination(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson("/api/cache?project_id={$this->projectOneId}&environment=production&search=lightyear&per_page=1");
+
+        $response->assertOk();
+        $response->assertJsonPath('kind', 'collection');
+        $response->assertJsonPath('table.rows.0.key.text', 'lightyear:cache:session:9f0b');
+        $response->assertJsonPath('table.rows.0.store.text', 'redis');
+        $response->assertJsonPath('table.rows.0.events.text', '2');
+        $response->assertJsonPath('table.rows.0.type.text', 'miss');
+        $response->assertJsonPath('pagination.total', 1);
+        $response->assertJsonCount(1, 'table.rows');
+    }
+
+    public function test_cache_show_returns_scoped_group_detail(): void
+    {
+        $this->seedFixtures();
+
+        $groupHash = '51515151515151515151515151515151';
+        $response = $this->getJson("/api/cache/{$groupHash}?project_id={$this->projectOneId}&environment=production");
+
+        $response->assertOk();
+        $response->assertJsonPath('title', 'lightyear:cache:session:9f0b');
+        $response->assertJsonPath('tags.0.text', 'redis');
+        $response->assertJsonPath('tags.1.text', 'miss');
+        $response->assertJsonPath('summaryPanels.0.entries.1.value', '60s');
+        $response->assertJsonPath('summaryPanels.0.entries.2.value', '2');
+        $response->assertJsonPath('tables.0.rows.0.event.meta', 'GET /orders/{order} · exec-orders-3');
+        $response->assertJsonPath('tables.0.rows.0.duration.text', '310μs');
+    }
+
+    public function test_cache_show_returns_not_found_for_unknown_group(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson("/api/cache/53535353535353535353535353535353?project_id={$this->projectOneId}&environment=production");
+
+        $response->assertNotFound();
+        $response->assertJsonPath(
+            'message',
+            'Nightwatch cache group [53535353535353535353535353535353] was not found.',
+        );
+    }
+
+    public function test_cache_show_requires_scope_when_group_hash_is_ambiguous(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson('/api/cache/52525252525252525252525252525252');
+
+        $response->assertStatus(409);
+        $response->assertJsonPath(
+            'message',
+            'Cache group hash [52525252525252525252525252525252] exists in multiple project/environment scopes. Pass project_id and environment.',
+        );
+    }
+
     private function seedFixtures(): void
     {
         if ($this->seeded) {
@@ -514,6 +573,8 @@ class NightwatchApiTest extends TestCase
         $duplicateNotificationGroupHash = '32323232323232323232323232323232';
         $mailGroupHash = '41414141414141414141414141414141';
         $duplicateMailGroupHash = '42424242424242424242424242424242';
+        $cacheGroupHash = '51515151515151515151515151515151';
+        $duplicateCacheGroupHash = '52525252525252525252525252525252';
 
         $this->ingest($this->projectOneTokenHash, [
             $this->userEvent($baseTime, 'user-1', 'Alice Nguyen', 'alice@example.com'),
@@ -691,7 +752,14 @@ class NightwatchApiTest extends TestCase
             ]),
             $this->logEvent($baseTime->addMinutes(20)->addMilliseconds(20), 'exec-orders-2', 'exec-orders-2'),
             $this->outgoingRequestEvent($baseTime->addMinutes(20)->addMilliseconds(30), 'exec-orders-2', 'exec-orders-2'),
-            $this->cacheEvent($baseTime->addMinutes(20)->addMilliseconds(50), 'exec-orders-2', 'exec-orders-2'),
+            $this->cacheEvent($baseTime->addMinutes(20)->addMilliseconds(50), 'exec-orders-2', 'exec-orders-2', [
+                '_group' => $cacheGroupHash,
+                'store' => 'redis',
+                'key' => 'lightyear:cache:session:9f0b',
+                'type' => 'write',
+                'duration' => 910,
+                'ttl' => 60,
+            ]),
             $this->exceptionEvent($baseTime->addMinutes(20)->addMilliseconds(60), 'exec-orders-2', 'exec-orders-2', [
                 '_group' => $groupHash,
                 'message' => 'Charge gateway timeout',
@@ -727,6 +795,7 @@ class NightwatchApiTest extends TestCase
                 'queries' => 2,
                 'notifications' => 1,
                 'mail' => 1,
+                'cache_events' => 1,
                 'exception_preview' => 'Charge gateway timeout',
             ]),
             $this->queuedJobEvent($baseTime->addMinutes(36), 'job-trace-send-receipt', 'exec-orders-3', 'job-send-receipt', [
@@ -772,6 +841,14 @@ class NightwatchApiTest extends TestCase
                 'to' => 2,
                 'duration' => 16420,
             ]),
+            $this->cacheEvent($baseTime->addMinutes(35)->addMilliseconds(30), 'exec-orders-3', 'exec-orders-3', [
+                '_group' => $cacheGroupHash,
+                'store' => 'redis',
+                'key' => 'lightyear:cache:session:9f0b',
+                'type' => 'miss',
+                'duration' => 310,
+                'ttl' => 60,
+            ]),
             $this->jobAttemptEvent($baseTime->addMinutes(37), 'job-trace-send-receipt', 'job-attempt-send-receipt', 'job-send-receipt', [
                 'name' => 'App\\Jobs\\SendReceipt',
                 'connection' => 'sqs',
@@ -808,6 +885,14 @@ class NightwatchApiTest extends TestCase
                 'subject' => 'Duplicate digest',
                 'to' => 1,
                 'duration' => 2200,
+            ]),
+            $this->cacheEvent($baseTime->addMinutes(6)->addMilliseconds(30), 'duplicate-execution', 'duplicate-execution', [
+                '_group' => $duplicateCacheGroupHash,
+                'store' => 'redis',
+                'key' => 'duplicate:cache:1',
+                'type' => 'write',
+                'duration' => 420,
+                'ttl' => 30,
             ]),
         ]);
 
@@ -879,6 +964,14 @@ class NightwatchApiTest extends TestCase
                 'subject' => 'Duplicate digest',
                 'to' => 1,
                 'duration' => 2600,
+            ]),
+            $this->cacheEvent($baseTime->addMinutes(6)->addMilliseconds(30), 'duplicate-execution', 'duplicate-execution', [
+                '_group' => $duplicateCacheGroupHash,
+                'store' => 'redis',
+                'key' => 'duplicate:cache:1',
+                'type' => 'miss',
+                'duration' => 510,
+                'ttl' => 30,
             ]),
         ]);
 

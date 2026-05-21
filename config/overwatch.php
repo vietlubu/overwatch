@@ -27,6 +27,17 @@ return [
         'channel' => env('OVERWATCH_LOG_CHANNEL', env('LOG_CHANNEL', 'stack')),
     ],
 
+    'scheduling' => [
+        'rollup' => [
+            'enabled' => env('OVERWATCH_ROLLUP_SCHEDULE_ENABLED', true),
+            'every_minutes' => max(1, min(59, (int) env('OVERWATCH_ROLLUP_SCHEDULE_EVERY_MINUTES', 1))),
+        ],
+        'cleanup' => [
+            'enabled' => env('OVERWATCH_CLEANUP_SCHEDULE_ENABLED', true),
+            'daily_at' => env('OVERWATCH_CLEANUP_SCHEDULE_DAILY_AT', '02:00'),
+        ],
+    ],
+
     'self_test' => [
         'enabled' => (bool) $selfTestEnabled,
         'route_prefix' => trim((string) env('OVERWATCH_SELF_TEST_ROUTE_PREFIX', '__nightwatch-test'), '/'),

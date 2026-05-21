@@ -1,23 +1,96 @@
-# Overwatch Nightwatch Ingest Server
+# Overwatch
 
-Repo Laravel ở root này là ingest server cho `laravel/nightwatch`. Nó nhận payload TCP từ các Laravel app khác, xác thực token theo project/environment, và lưu dữ liệu vào database để phục vụ phân tích, rollup, API, và dashboard sau này.
+Overwatch là Laravel ingest server cho `laravel/nightwatch`.
 
-Thư mục [`poc/`](./poc/README.md) vẫn được giữ lại như prototype/reference để debug nhanh. Luồng chính của repo hiện tại là listener TCP + database ingest trong Laravel app này.
+Repo này nhận payload TCP từ các Laravel app khác, xác thực ingest key theo `project/environment`, và lưu dữ liệu vào database để phục vụ API, rollup, cleanup, và các bước phân tích tiếp theo.
 
-## Quick Start
+## Repo này dùng để làm gì
 
-### 1. Setup repo này
+- Chạy TCP listener cho Nightwatch.
+- Quản lý project và ingest key.
+- Lưu raw events và detail tables vào các bảng `nw_*`.
+- Cung cấp API đọc dữ liệu đã ingest.
+- Tự verify end-to-end bằng self-test harness.
+
+`poc/` vẫn còn trong repo nhưng chỉ là prototype/debug reference, không phải luồng triển khai chính.
+
+## Yêu cầu
+
+- PHP `^8.2`
+- Composer
+- Node.js + npm
+- SQLite, MySQL, hoặc Postgres
+
+## Cấu hình nhanh Overwatch
+
+### Cách nhanh nhất
+
+```bash
+composer setup
+```
+
+Lệnh này sẽ:
+
+- cài PHP dependencies
+- tạo `.env` nếu chưa có
+- generate app key
+- tạo `database/database.sqlite` nếu chưa có
+- chạy migrate
+- cài Node dependencies
+- build frontend assets
+
+### Cách setup thủ công
 
 ```bash
 composer install
 cp .env.example .env
 php artisan key:generate
+```
+
+Nếu dùng SQLite mặc định:
+
+```bash
+touch database/database.sqlite
 php artisan migrate
 ```
 
-### 2. Start ingest services
+Nếu dùng MySQL/Postgres, sửa DB config trong `.env` trước khi chạy migrate:
 
-Chạy listener TCP và HTTP app ở hai terminal riêng:
+```bash
+php artisan migrate
+```
+
+Sau khi xong phần database:
+
+```bash
+npm install
+npm run build
+```
+
+## Chạy Overwatch local
+
+### Cách nhanh cho vòng lặp dev
+
+```bash
+composer run dev
+```
+
+Lệnh này sẽ bật nhanh:
+
+- HTTP app
+- queue listener
+- logs tail
+- Vite dev server
+
+Lưu ý: `composer run dev` không chạy TCP ingest listener, nên bạn vẫn cần thêm một terminal riêng:
+
+```bash
+php artisan nightwatch:listen
+```
+
+### Chạy thủ công
+
+Mở 2 terminal riêng:
 
 ```bash
 php artisan nightwatch:listen
@@ -27,120 +100,172 @@ php artisan serve
 Mặc định:
 
 - HTTP app: `http://127.0.0.1:8000`
-- TCP listener: `127.0.0.1:2407`
+- TCP ingest listener: `127.0.0.1:2407`
 
-### 3. Tạo project + ingest key cho app được monitor
+Các biến môi trường chính:
+
+```env
+OVERWATCH_TCP_HOST=127.0.0.1
+OVERWATCH_TCP_PORT=2407
+OVERWATCH_RETENTION_DAYS=30
+OVERWATCH_ROLLUP_RETENTION_DAYS=180
+```
+
+## Tạo project và ingest key
+
+Tạo một tenant cho app sẽ được monitor:
 
 ```bash
 php artisan nightwatch:project:create demo-app --name="Demo App"
 php artisan nightwatch:key:create demo-app --environment=local
 ```
 
-`nightwatch:key:create` sẽ in ra env snippet để copy sang app Laravel được monitor.
+Lệnh tạo key sẽ in ra một đoạn env như sau:
 
-### 4. Cấu hình app Laravel được monitor
+```env
+NIGHTWATCH_TOKEN=...
+NIGHTWATCH_INGEST_URI=127.0.0.1:2407
+NIGHTWATCH_DEPLOY=your-deploy-name
+NIGHTWATCH_SERVER=your-server-name
+```
 
-Trong app kia:
+`NIGHTWATCH_TOKEN` là secret, chỉ được hiển thị một lần. Hãy copy ngay sang project cần monitor.
+
+## Setup một project Laravel khác dùng Nightwatch với Overwatch
+
+Giả sử bạn có một app Laravel khác tên là `my-app`.
+
+### 1. Cài Nightwatch trong app đó
 
 ```bash
 composer require laravel/nightwatch
 php artisan vendor:publish --tag=nightwatch-config
 ```
 
+### 2. Cập nhật `.env` của app được monitor
+
+Dán các giá trị lấy từ Overwatch:
+
 ```env
 NIGHTWATCH_ENABLED=true
 NIGHTWATCH_TOKEN=...secret from overwatch...
 NIGHTWATCH_INGEST_URI=127.0.0.1:2407
 NIGHTWATCH_DEPLOY=local
-NIGHTWATCH_SERVER=demo-app-web-1
+NIGHTWATCH_SERVER=my-app-web-1
 ```
 
-`NIGHTWATCH_BASE_URL` khong nam trong flow TCP ingest hien tai cua repo nay.
+Nếu app của bạn chạy trên máy khác, `NIGHTWATCH_INGEST_URI` phải trỏ tới host/port thực tế của Overwatch, ví dụ:
 
-## Config Split
+```env
+NIGHTWATCH_INGEST_URI=10.0.0.15:2407
+```
 
-- `config/overwatch.php`: config cho ingest server va self-test (`OVERWATCH_TCP_*`, retention, rollup, self-test ports/prefix).
-- `config/nightwatch.php`: config cho Nightwatch client (`NIGHTWATCH_*`) dung khi repo nay tu dong phat event trong self-test hoac khi ban co chu y monitor chinh app nay.
+### 3. Reload config trong app được monitor
 
-Mau `.env.example` de `NIGHTWATCH_ENABLED=false` theo mac dinh de ingest server khong tu monitor chinh no trong luong van hanh thuong.
+```bash
+php artisan config:clear
+```
 
-## Local Self-Test Harness
+### 4. Trigger event để kiểm tra ingest
 
-Repo nay co bo self-test end-to-end dung chinh Overwatch nhu mot monitored Laravel app cuc bo:
+Ví dụ nếu app monitor đang chạy local:
+
+```bash
+php artisan serve --port=8001
+```
+
+Rồi trigger một vài event:
+
+```bash
+php artisan inspire
+curl http://127.0.0.1:8001
+```
+
+Chỉ cần Overwatch listener đang chạy, token đúng, và app monitor có thể kết nối tới `NIGHTWATCH_INGEST_URI`, event sẽ được ghi vào các bảng `nw_*`.
+
+## Luồng tích hợp ngắn gọn
+
+1. Chạy Overwatch bằng `php artisan nightwatch:listen`.
+2. Tạo `project` và `ingest key` trên Overwatch.
+3. Cài `laravel/nightwatch` ở app khác.
+4. Copy `NIGHTWATCH_TOKEN` và `NIGHTWATCH_INGEST_URI` sang app đó.
+5. Trigger request/command/job để app gửi event về Overwatch.
+
+## Self-test end-to-end
+
+Repo này có sẵn harness để tự verify toàn bộ ingest pipeline:
 
 ```bash
 php artisan nightwatch:test-events --timeout=25
 ```
 
-Command nay se:
+Harness sẽ tự:
 
-1. Tao project/key tam thoi cho self-test.
-2. Spawn listener TCP, web server, queue worker, va helper subprocesses.
-3. Trigger request, command, scheduler, queue job, mail, notification, cache, query, outgoing request, va exception.
-4. Doi ingest xong va verify rows trong database.
+1. tạo project/key tạm
+2. chạy listener và helper processes
+3. phát request, command, queue, schedule, notification, mail, cache, query, outgoing request, exception
+4. kiểm tra dữ liệu đã được lưu vào database
 
-Ket qua da duoc verify end-to-end voi summary:
+Đây là cách nhanh nhất để xác nhận repo còn hoạt động tốt trước release.
 
-- `cache-event` 6
-- `command` 4
-- `exception` 3
-- `job-attempt` 4
-- `log` 1
-- `mail` 1
-- `notification` 1
-- `outgoing-request` 1
-- `query` 1
-- `queued-job` 3
-- `request` 6
-- `scheduled-task` 3
-- `user` 1
-
-## Selective Capture Cho Self-Test
-
-Nightwatch hien khong co config whitelist kieu "chi nghe nhung route/command nay". Overwatch emulate dieu nay bang cach:
-
-- dat sample rate mac dinh ve `0` trong helper subprocesses
-- opt-in request test bang `Laravel\\Nightwatch\\Http\\Middleware\\Sample::always()`
-- opt-in scheduled task bang `Laravel\\Nightwatch\\Console\\Sample::always()`
-- opt-in command test bang `Nightwatch::sample(1)`
-- dung reject hooks de bo qua query/cache/outgoing/mail/notification/job khong mang marker self-test
-
-Muc tieu la chi ghi nhan cac surface test duoc tao rieng, tranh noise tu chinh listener hoac request phu.
-
-## Event Coverage
-
-Self-test song hanh hien bao phu cac record type Nightwatch sau:
-
-- `user`
-- `request`
-- `command`
-- `scheduled-task`
-- `queued-job`
-- `job-attempt`
-- `exception`
-- `query`
-- `outgoing-request`
-- `log`
-- `mail`
-- `notification`
-- `cache-event`
-
-Trong do request payload states duoc verify cho `present`, `absent`, `not_enabled`, va `unsupported_content_type`; cache-event bao gom `hit`, `miss`, `write`, `delete`, `write-failure`, va `delete-failure`.
-
-## Useful Commands
+## Lệnh hữu ích
 
 ```bash
 php artisan nightwatch:listen
-php artisan nightwatch:test-events
 php artisan nightwatch:project:create {slug} --name="Project Name"
 php artisan nightwatch:key:create {project} --environment=local
+php artisan nightwatch:test-events
 php artisan nightwatch:rollup
 php artisan nightwatch:cleanup
 php artisan test
 ```
 
-## Docs
+## API hiện có
 
-- [GETTING-STARTED.md](./GETTING-STARTED.md): luong setup nhanh
-- [LARAVEL-SETUP.md](./LARAVEL-SETUP.md): chi tiet kien truc va van hanh
-- [poc/README.md](./poc/README.md): Node.js prototype/reference
+Repo hiện expose các endpoint đọc dữ liệu như:
+
+- `/api/projects`
+- `/api/requests`
+- `/api/exceptions`
+- `/api/jobs`
+- `/api/commands`
+- `/api/scheduled-tasks`
+- `/api/queries`
+- `/api/notifications`
+- `/api/mail`
+- `/api/cache`
+- `/api/outgoing-requests`
+- `/api/users`
+- `/api/logs`
+
+## Troubleshooting
+
+### Listener không bind được cổng
+
+```bash
+lsof -i :2407
+```
+
+### App được monitor không gửi event
+
+Kiểm tra lại:
+
+- `NIGHTWATCH_ENABLED=true`
+- `NIGHTWATCH_TOKEN` đúng với key được tạo từ Overwatch
+- `NIGHTWATCH_INGEST_URI` đúng host và port của listener
+- đã chạy `php artisan config:clear` sau khi sửa `.env`
+- app monitor có network reachability tới máy chạy Overwatch
+
+### Muốn tắt self-monitoring của chính Overwatch
+
+Repo này đã để mặc định:
+
+```env
+NIGHTWATCH_ENABLED=false
+```
+
+Giá trị này nên giữ nguyên trong vận hành bình thường. Chỉ self-test harness mới override để phát event kiểm thử.
+
+## Prototype / debug reference
+
+Nếu cần đối chiếu với prototype Node.js để debug protocol, xem [poc/README.md](./poc/README.md).

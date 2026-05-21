@@ -71,6 +71,64 @@ class NightwatchApiTest extends TestCase
         $response->assertJsonPath('projects.1.name', 'Other Project');
     }
 
+    public function test_dashboard_returns_sectioned_payload_for_a_scoped_project(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson("/api/dashboard?project_id={$this->projectOneId}");
+
+        $response->assertOk();
+        $response->assertJsonPath('title', 'Dashboard');
+        $response->assertJsonPath('sections.0.title', 'Activity');
+        $response->assertJsonPath('sections.0.metrics.0.value', '5');
+        $response->assertJsonPath('sections.0.tables.0.rows.0.route.text', 'GET /orders/{order}');
+        $response->assertJsonPath('sections.0.tables.0.rows.0.requests.text', '3');
+        $response->assertJsonPath('sections.1.metrics.0.value', '1 failed');
+        $response->assertJsonPath('sections.1.metrics.1.value', '516.39ms');
+        $response->assertJsonPath('sections.1.metrics.2.value', '2 writes');
+        $response->assertJsonPath('sections.2.tables.0.rows.0.user.text', 'Alice Nguyen');
+        $response->assertJsonPath('sections.2.tables.0.rows.0.requests.text', '3');
+    }
+
+    public function test_dashboard_scope_excludes_other_projects(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson("/api/dashboard?project_id={$this->projectOneId}");
+
+        $response->assertOk();
+        $response->assertJsonPath('sections.1.panels.1.entries.0.value', 'API Project');
+        $response->assertJsonPath('sections.1.panels.1.entries.1.value', '1');
+    }
+
+    public function test_dashboard_without_scope_aggregates_across_projects(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson('/api/dashboard');
+
+        $response->assertOk();
+        $response->assertJsonPath('sections.0.metrics.0.value', '6');
+        $response->assertJsonPath('sections.1.panels.1.entries.0.value', 'All projects');
+        $response->assertJsonPath('sections.1.panels.1.entries.1.value', '2');
+    }
+
+    public function test_dashboard_rejects_invalid_range(): void
+    {
+        $response = $this->getJson('/api/dashboard?range=90d');
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['range']);
+    }
+
+    public function test_dashboard_rejects_environment_filter(): void
+    {
+        $response = $this->getJson('/api/dashboard?environment=prod');
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['environment']);
+    }
+
     public function test_request_show_returns_scoped_execution_detail(): void
     {
         $this->seedFixtures();

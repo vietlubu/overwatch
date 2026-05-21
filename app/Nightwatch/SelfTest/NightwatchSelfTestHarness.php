@@ -2,10 +2,13 @@
 
 namespace App\Nightwatch\SelfTest;
 
+use App\Nightwatch\NightwatchEventIngestor;
 use App\Nightwatch\NightwatchProjectKeyManager;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use JsonException;
 use RuntimeException;
 use Symfony\Component\Process\Exception\ProcessFailedException;
 use Symfony\Component\Process\Process;
@@ -17,7 +20,13 @@ use function fclose;
 use function fsockopen;
 use function in_array;
 use function is_array;
+use function is_string;
+use function json_decode;
+use function json_encode;
+use function random_int;
 use function stream_socket_server;
+use function str_replace;
+use function strlen;
 use function usleep;
 
 final class NightwatchSelfTestHarness
@@ -29,12 +38,34 @@ final class NightwatchSelfTestHarness
 
     public function __construct(
         private readonly NightwatchProjectKeyManager $keys,
+        private readonly NightwatchEventIngestor $ingestor,
     ) {}
 
     /**
-     * @return array{run_id: string, project_id: int, summary: array<string, int>}
+     * @return array{
+     *     run_id: string,
+     *     project_id: int,
+     *     summary: array<string, int>,
+     *     days_back: int,
+     *     concurrent_min: int,
+     *     concurrent_max: int,
+     *     user_count: int,
+     *     replayed_batches: int,
+     *     replayed_events: int,
+     *     total_raw_events: int,
+     * }
      */
-    public function run(?string $runId = null, ?int $listenerPort = null, ?int $webPort = null, ?int $secondaryWebPort = null, ?int $timeout = null): array
+    public function run(
+        ?string $runId = null,
+        ?int $listenerPort = null,
+        ?int $webPort = null,
+        ?int $secondaryWebPort = null,
+        ?int $timeout = null,
+        int $daysBack = 0,
+        int $concurrentMin = 1,
+        int $concurrentMax = 1,
+        int $userCount = 1,
+    ): array
     {
         $runId ??= Str::lower((string) Str::ulid());
         $timeout ??= (int) config('overwatch.self_test.startup_timeout', 20);
@@ -81,11 +112,26 @@ final class NightwatchSelfTestHarness
             $this->runHelperCommand(['queue:work', 'database', '--once', '--queue='.NightwatchSelfTestSupport::queueName($runId, 'failed'), '--sleep=0', '--tries=1'], $this->helperEnvironment($key['secret'], $ingestUri, $deployment, 'queue-failed', $runId, $secondaryBaseUrl), [0]);
 
             $summary = $this->waitForAndVerify($project['id'], $runId, $timeout);
+            $replay = $this->replayHistoricalEvents(
+                projectId: $project['id'],
+                deploymentId: $this->resolveDeploymentId($project['id'], $deployment),
+                runId: $runId,
+                tokenHash: $key['token_hash'],
+                daysBack: $daysBack,
+                concurrentMin: $concurrentMin,
+                concurrentMax: $concurrentMax,
+                userCount: $userCount,
+            );
 
             return [
                 'run_id' => $runId,
                 'project_id' => $project['id'],
                 'summary' => $summary,
+                'days_back' => $daysBack,
+                'concurrent_min' => $concurrentMin,
+                'concurrent_max' => $concurrentMax,
+                'user_count' => $userCount,
+                ...$replay,
             ];
         } finally {
             DB::table('jobs')
@@ -371,6 +417,230 @@ final class NightwatchSelfTestHarness
         }
 
         return $summary;
+    }
+
+    /**
+     * @return array{replayed_batches: int, replayed_events: int, total_raw_events: int}
+     */
+    private function replayHistoricalEvents(
+        int $projectId,
+        ?int $deploymentId,
+        string $runId,
+        string $tokenHash,
+        int $daysBack,
+        int $concurrentMin,
+        int $concurrentMax,
+        int $userCount,
+    ): array {
+        $sourceRecords = $this->sourceReplayRecords($projectId, $deploymentId, $runId);
+        $totalRawEvents = count($sourceRecords);
+
+        if ($sourceRecords === [] || ($daysBack === 0 && $concurrentMax === 1 && $concurrentMin === 1)) {
+            return [
+                'replayed_batches' => 0,
+                'replayed_events' => 0,
+                'total_raw_events' => $totalRawEvents,
+            ];
+        }
+
+        $replayedBatches = 0;
+        $replayedEvents = 0;
+        $userProfiles = $this->resolveReplayUserProfiles($projectId, $userCount);
+
+        for ($dayOffset = $daysBack; $dayOffset >= 0; $dayOffset--) {
+            $dailyBatches = random_int($concurrentMin, $concurrentMax);
+
+            if ($dayOffset === 0) {
+                $dailyBatches = max(0, $dailyBatches - 1);
+            }
+
+            for ($batch = 1; $batch <= $dailyBatches; $batch++) {
+                $cloneRunId = "{$runId}-d{$dayOffset}-c{$batch}";
+                $userProfile = $userProfiles[$replayedBatches % count($userProfiles)];
+                $records = [];
+
+                foreach ($sourceRecords as $recordIndex => $sourceRecord) {
+                    $records[] = $this->mutateReplayRecord(
+                        record: $sourceRecord['record'],
+                        originalRunId: $runId,
+                        cloneRunId: $cloneRunId,
+                        userProfile: $userProfile,
+                        occurredAt: $sourceRecord['occurred_at']
+                            ->subDays($dayOffset)
+                            ->addSeconds((($batch - 1) * 30) + $recordIndex),
+                    );
+                }
+
+                $this->ingestor->ingestWirePayload($this->wirePayload($records, $tokenHash), 'self-test-replay');
+
+                $replayedBatches++;
+                $replayedEvents += count($records);
+            }
+        }
+
+        return [
+            'replayed_batches' => $replayedBatches,
+            'replayed_events' => $replayedEvents,
+            'total_raw_events' => $totalRawEvents + $replayedEvents,
+        ];
+    }
+
+    /**
+     * @return list<array{record: array<string, mixed>, occurred_at: CarbonImmutable}>
+     */
+    private function sourceReplayRecords(int $projectId, ?int $deploymentId, string $runId): array
+    {
+        if ($deploymentId === null) {
+            throw new RuntimeException("Unable to resolve deployment for replay run [{$runId}] on project [{$projectId}].");
+        }
+
+        $selfTestUserEmail = NightwatchSelfTestSupport::userEmail($runId);
+
+        return DB::table('nw_raw_events')
+            ->select(['payload', 'occurred_at'])
+            ->where('project_id', $projectId)
+            ->where(function ($query) use ($deploymentId, $selfTestUserEmail) {
+                $query->where('deployment_id', $deploymentId)
+                    ->orWhere(function ($query) use ($selfTestUserEmail) {
+                        $query->where('event_type', 'user')
+                            ->where('payload', 'like', '%'.$selfTestUserEmail.'%');
+                    });
+            })
+            ->orderBy('batch_id')
+            ->orderBy('batch_record_index')
+            ->get()
+            ->map(function (object $row): array {
+                try {
+                    $record = json_decode((string) $row->payload, true, flags: JSON_THROW_ON_ERROR);
+                } catch (JsonException $e) {
+                    throw new RuntimeException('Unable to decode stored self-test payload for replay.', previous: $e);
+                }
+
+                if (! is_array($record)) {
+                    throw new RuntimeException('Stored self-test payload is not a valid Nightwatch event record.');
+                }
+
+                return [
+                    'record' => $record,
+                    'occurred_at' => CarbonImmutable::parse((string) $row->occurred_at)->utc(),
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $record
+     * @param  array{external_user_id: string, name: string, username: string}  $userProfile
+     * @return array<string, mixed>
+     */
+    private function mutateReplayRecord(
+        array $record,
+        string $originalRunId,
+        string $cloneRunId,
+        array $userProfile,
+        CarbonImmutable $occurredAt,
+    ): array
+    {
+        $record = $this->replaceRunIdRecursively($record, $originalRunId, $cloneRunId);
+
+        foreach (['trace_id', 'execution_id', 'attempt_id', 'job_id'] as $field) {
+            if (isset($record[$field]) && is_string($record[$field]) && $record[$field] !== '') {
+                $record[$field] .= "|{$cloneRunId}";
+            }
+        }
+
+        if (($record['t'] ?? null) === 'user') {
+            $record['id'] = $userProfile['external_user_id'];
+            $record['name'] = $userProfile['name'];
+            $record['username'] = $userProfile['username'];
+        } elseif (isset($record['user']) && is_string($record['user']) && $record['user'] !== '') {
+            $record['user'] = $userProfile['external_user_id'];
+        }
+
+        $record['timestamp'] = $this->floatTimestamp($occurredAt);
+
+        return $record;
+    }
+
+    /**
+     * @return list<array{external_user_id: string, name: string, username: string}>
+     */
+    private function resolveReplayUserProfiles(int $projectId, int $userCount): array
+    {
+        $existingProfiles = DB::table('nw_users')
+            ->select(['external_user_id', 'name', 'username'])
+            ->where('project_id', $projectId)
+            ->where(function ($query) {
+                $query
+                    ->where('username', 'like', 'nightwatch-self-test%@example.com')
+                    ->orWhere('name', 'like', 'Nightwatch Self Test%');
+            })
+            ->orderBy('first_seen_at')
+            ->limit($userCount)
+            ->get()
+            ->map(fn (object $row): array => [
+                'external_user_id' => (string) $row->external_user_id,
+                'name' => (string) ($row->name ?: 'Nightwatch Self Test'),
+                'username' => (string) ($row->username ?: 'nightwatch-self-test@example.com'),
+            ])
+            ->values()
+            ->all();
+
+        $missingProfiles = $userCount - count($existingProfiles);
+
+        for ($index = 1; $index <= $missingProfiles; $index++) {
+            $slot = count($existingProfiles) + $index;
+            $externalUserId = sprintf('nightwatch-self-test-user-%04d', $slot);
+
+            $existingProfiles[] = [
+                'external_user_id' => $externalUserId,
+                'name' => sprintf('Nightwatch Self Test User %04d', $slot),
+                'username' => "{$externalUserId}@example.com",
+            ];
+        }
+
+        return $existingProfiles;
+    }
+
+    private function replaceRunIdRecursively(mixed $value, string $originalRunId, string $cloneRunId, ?string $key = null): mixed
+    {
+        if (is_array($value)) {
+            $replaced = [];
+
+            foreach ($value as $childKey => $childValue) {
+                $replaced[$childKey] = $this->replaceRunIdRecursively($childValue, $originalRunId, $cloneRunId, is_string($childKey) ? $childKey : null);
+            }
+
+            return $replaced;
+        }
+
+        if (! is_string($value) || $key === 'deploy' || $key === 'server') {
+            return $value;
+        }
+
+        return str_replace($originalRunId, $cloneRunId, $value);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $records
+     */
+    private function wirePayload(array $records, string $tokenHash): string
+    {
+        try {
+            $encoded = json_encode($records, JSON_THROW_ON_ERROR);
+        } catch (JsonException $e) {
+            throw new RuntimeException('Unable to encode replay payload.', previous: $e);
+        }
+
+        $body = "v1:{$tokenHash}:{$encoded}";
+
+        return strlen($body).':'.$body;
+    }
+
+    private function floatTimestamp(CarbonImmutable $occurredAt): float
+    {
+        return $occurredAt->getTimestamp() + ($occurredAt->micro / 1_000_000);
     }
 
     private function resolveDeploymentId(int $projectId, string $deployment): ?int

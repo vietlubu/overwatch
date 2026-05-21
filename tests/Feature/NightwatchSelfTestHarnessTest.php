@@ -54,6 +54,30 @@ class NightwatchSelfTestHarnessTest extends TestCase
         ], $summary);
     }
 
+    public function test_nightwatch_test_events_command_can_replay_multiple_days_with_fixed_concurrency(): void
+    {
+        $this->artisan('nightwatch:test-events', [
+            '--timeout' => 25,
+            '--days-back' => 1,
+            '--concurrent-min' => 2,
+            '--concurrent-max' => 2,
+            '--users' => 2,
+        ])->assertSuccessful();
+
+        $this->assertSame(140, DB::table('nw_raw_events')->count());
+        $this->assertSame(2, DB::table('nw_users')->count());
+
+        $distinctDays = DB::table('nw_raw_events')
+            ->selectRaw('substr(occurred_at, 1, 10) as event_day')
+            ->distinct()
+            ->pluck('event_day')
+            ->filter()
+            ->values()
+            ->all();
+
+        $this->assertCount(2, $distinctDays);
+    }
+
     public function test_self_test_routes_return_404_when_guard_is_disabled(): void
     {
         config(['overwatch.self_test.enabled' => false]);

@@ -229,21 +229,7 @@ final class NightwatchRollupService
 
         DB::table('nw_schedule_1m')->whereBetween('bucket_start', [$from, $to])->delete();
 
-        $this->persistRollup(
-            'nw_schedule_1m',
-            $this->groupRows($rows, fn ($row) => [
-                'group_hash' => $row->group_hash,
-                'name' => $row->name,
-                'cron' => $row->cron,
-                'timezone' => $row->timezone,
-            ], fn ($row) => [
-                'duration' => (int) $row->duration_us,
-                'is_error' => $row->status === 'failed',
-                'is_failure' => $row->status !== 'processed',
-                'request_bytes' => 0,
-                'response_bytes' => 0,
-            ]),
-        );
+        $this->persistRollup('nw_schedule_1m', $this->groupScheduledRows($rows));
     }
 
     private function refreshLogLevel(CarbonInterface $from, CarbonInterface $to): void
@@ -337,6 +323,70 @@ final class NightwatchRollupService
         }
 
         DB::table($table)->insert($rows);
+    }
+
+    /**
+     * @param  Collection<int, object>  $rows
+     * @return list<array<string, mixed>>
+     */
+    private function groupScheduledRows(Collection $rows): array
+    {
+        $groups = [];
+
+        foreach ($rows as $row) {
+            $bucketStart = CarbonImmutable::parse($row->occurred_at)->startOfMinute();
+            $key = json_encode([
+                'bucket_start' => $bucketStart->toIso8601String(),
+                'project_id' => $row->project_id,
+                'group_hash' => $row->group_hash,
+                'cron' => $row->cron,
+                'timezone' => $row->timezone,
+            ], JSON_THROW_ON_ERROR);
+
+            if (! isset($groups[$key])) {
+                $groups[$key] = [
+                    'bucket_start' => $bucketStart,
+                    'project_id' => $row->project_id,
+                    'group_hash' => $row->group_hash,
+                    'name' => $row->name,
+                    'cron' => $row->cron,
+                    'timezone' => $row->timezone,
+                    'count' => 0,
+                    'error_count' => 0,
+                    'failure_count' => 0,
+                    'sum_duration_us' => 0,
+                    'durations' => [],
+                    'sum_request_bytes' => 0,
+                    'sum_response_bytes' => 0,
+                    'latest_occurred_at' => $bucketStart,
+                ];
+            }
+
+            $occurredAt = CarbonImmutable::parse($row->occurred_at);
+
+            if ($occurredAt->greaterThan($groups[$key]['latest_occurred_at'])) {
+                $groups[$key]['name'] = $row->name;
+                $groups[$key]['latest_occurred_at'] = $occurredAt;
+            }
+
+            $groups[$key]['count']++;
+            $groups[$key]['error_count'] += $row->status === 'failed' ? 1 : 0;
+            $groups[$key]['failure_count'] += $row->status !== 'processed' ? 1 : 0;
+            $groups[$key]['sum_duration_us'] += (int) $row->duration_us;
+            $groups[$key]['durations'][] = (int) $row->duration_us;
+        }
+
+        return array_map(function (array $group) {
+            $durations = $group['durations'];
+            unset($group['durations'], $group['latest_occurred_at']);
+            $group['p50_us'] = $this->percentile($durations, 50);
+            $group['p95_us'] = $this->percentile($durations, 95);
+            $group['p99_us'] = $this->percentile($durations, 99);
+            $group['created_at'] = now();
+            $group['updated_at'] = now();
+
+            return $group;
+        }, array_values($groups));
     }
 
     /**

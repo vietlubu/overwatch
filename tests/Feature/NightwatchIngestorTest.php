@@ -149,6 +149,44 @@ class NightwatchIngestorTest extends TestCase
         ]);
     }
 
+    public function test_schedule_rollup_aggregates_rows_that_share_the_unique_bucket_key(): void
+    {
+        $baseTime = CarbonImmutable::parse('2026-05-20 10:15:30 UTC');
+        $firstTrace = (string) Str::uuid();
+        $secondTrace = (string) Str::uuid();
+
+        app(NightwatchEventIngestor::class)->ingestWirePayload($this->wirePayload([
+            $this->scheduledTaskEvent($baseTime, $firstTrace, [
+                'name' => 'php artisan sync:orders --tenant=alpha',
+                'status' => 'processed',
+                'duration' => 1_000,
+            ]),
+            $this->scheduledTaskEvent($baseTime->addSeconds(10), $secondTrace, [
+                'name' => 'php artisan sync:orders --tenant=beta',
+                'status' => 'failed',
+                'duration' => 2_000,
+            ]),
+        ]));
+
+        app(NightwatchRollupService::class)->refresh(
+            $baseTime->subMinute(),
+            $baseTime->addMinute(),
+        );
+
+        $this->assertDatabaseCount('nw_schedule_1m', 1);
+        $this->assertDatabaseHas('nw_schedule_1m', [
+            'project_id' => $this->projectId,
+            'group_hash' => 'schedule-group-00000000000000000001',
+            'cron' => '*/5 * * * *',
+            'timezone' => 'UTC',
+            'name' => 'php artisan sync:orders --tenant=beta',
+            'count' => 2,
+            'error_count' => 1,
+            'failure_count' => 1,
+            'sum_duration_us' => 3_000,
+        ]);
+    }
+
     public function test_it_allows_the_same_execution_id_for_different_projects(): void
     {
         $sharedTrace = (string) Str::uuid();

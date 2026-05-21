@@ -212,6 +212,8 @@ Repo này có sẵn harness để tự verify toàn bộ ingest pipeline:
 
 ```bash
 php artisan nightwatch:test-events --timeout=25
+php artisan nightwatch:test-events --days-back=30 --concurrent-min=3 --concurrent-max=8
+php artisan nightwatch:test-events --days-back=30 --concurrent-min=30 --concurrent-max=80 --users=20
 ```
 
 Harness sẽ tự:
@@ -220,6 +222,13 @@ Harness sẽ tự:
 2. chạy listener và helper processes
 3. phát request, command, queue, schedule, notification, mail, cache, query, outgoing request, exception
 4. kiểm tra dữ liệu đã được lưu vào database
+
+Nếu cần bơm nhiều dữ liệu hơn để test dashboard / rollup:
+
+- `--days-back=N` sẽ replay lại bộ event chuẩn từ `N` ngày trước đến hiện tại
+- `--concurrent-min` / `--concurrent-max` sẽ tạo ngẫu nhiên từ bao nhiêu đến bao nhiêu batch mỗi ngày
+- `--users=N` sẽ giới hạn số self-test user được reuse trong phần replay; nếu `nw_users` đã có đủ self-test user thì sẽ không tạo thêm
+- batch của ngày hiện tại đã có sẵn từ run gốc, nên replay chỉ cộng thêm phần chênh lệch để tránh đếm trùng logic verify
 
 Đây là cách nhanh nhất để xác nhận repo còn hoạt động tốt trước release.
 

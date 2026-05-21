@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router';
 import KeybindingPanel from './KeybindingPanel.vue';
 import ProjectPicker from './ProjectPicker.vue';
 import { fetchProjects } from '../data/liveProjects';
+import { fetchIssueCount } from '../data/liveScreens';
 import { mergeScopeIntoTarget, pickScopeQuery } from '../utils/scopeQuery';
 
 const props = defineProps({
@@ -50,12 +51,14 @@ const activeFilter = ref(resolveInitialFilter());
 const projects = ref([]);
 const projectsLoading = ref(false);
 const projectsError = ref('');
+const issueCount = ref(null);
 const keybindingVisible = ref(false);
 const sequenceActive = ref(false);
 const projectPickerOpen = ref(false);
 const projectPickerIndex = ref(0);
 
 let keybindingTimerId = null;
+let issueCountRequestToken = 0;
 
 const setActiveFilter = (filterKey) => {
     activeFilter.value = filterKey;
@@ -91,6 +94,7 @@ const scopedNavSections = computed(() =>
         ...section,
         items: section.items.map((item) => ({
             ...item,
+            badge: item.key === 'issues' && issueCount.value !== null ? String(issueCount.value) : item.badge,
             resolvedTo: mergeScopeIntoTarget(item.to, route.query),
         })),
     })),
@@ -287,6 +291,29 @@ const fetchProjectOptions = async () => {
     }
 };
 
+const refreshIssueCount = async () => {
+    const currentToken = ++issueCountRequestToken;
+
+    try {
+        const total = await fetchIssueCount({
+            range: activeFilter.value || '24h',
+            routeQuery: route.query,
+        });
+
+        if (currentToken !== issueCountRequestToken) {
+            return;
+        }
+
+        issueCount.value = total;
+    } catch {
+        if (currentToken !== issueCountRequestToken) {
+            return;
+        }
+
+        issueCount.value = null;
+    }
+};
+
 const syncProjectPickerIndex = () => {
     const matchIndex = projectEntries.value.findIndex(
         (entry) => String(entry.projectId ?? '') === String(scopedQuery.value.project_id ?? ''),
@@ -445,6 +472,14 @@ watch(activeFilter, (value) => {
         window.localStorage.setItem(FILTER_STORAGE_KEY, value);
     }
 });
+
+watch(
+    () => [activeFilter.value, route.query.project_id ?? null],
+    () => {
+        refreshIssueCount();
+    },
+    { immediate: true },
+);
 
 onMounted(() => {
     fetchProjectOptions();

@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\NightwatchCommandController;
 use App\Http\Controllers\Api\NightwatchCacheController;
 use App\Http\Controllers\Api\NightwatchDashboardController;
 use App\Http\Controllers\Api\NightwatchExceptionController;
+use App\Http\Controllers\Api\NightwatchIssueController;
 use App\Http\Controllers\Api\NightwatchJobController;
 use App\Http\Controllers\Api\NightwatchLogController;
 use App\Http\Controllers\Api\NightwatchMailController;
@@ -18,6 +19,9 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/projects', [NightwatchProjectController::class, 'index']);
 Route::get('/dashboard', [NightwatchDashboardController::class, 'index']);
+Route::get('/issues', [NightwatchIssueController::class, 'index']);
+Route::get('/issues/{issueKey}', [NightwatchIssueController::class, 'show']);
+Route::patch('/issues/{issueKey}/resolve', [NightwatchIssueController::class, 'resolve']);
 
 Route::get('/requests', [NightwatchRequestController::class, 'index']);
 Route::get('/requests/{executionId}', [NightwatchRequestController::class, 'show']);

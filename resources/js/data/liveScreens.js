@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { apiBlueprint } from './mockApi';
 
-const liveScreenKeys = new Set(['requests', 'exceptions', 'jobs', 'commands', 'scheduled-tasks', 'queries', 'notifications', 'mail', 'cache', 'outgoing-requests', 'users', 'logs']);
+const liveScreenKeys = new Set(['issues', 'requests', 'exceptions', 'jobs', 'commands', 'scheduled-tasks', 'queries', 'notifications', 'mail', 'cache', 'outgoing-requests', 'users', 'logs']);
 
 const pickScope = (query = {}) => {
     const scope = {};
@@ -67,4 +67,30 @@ export const fetchLiveDetail = async (screenKey, detailId, { routeQuery = {} } =
     });
 
     return withDetailBackToScope(response.data, routeQuery);
+};
+
+export const runLiveDetailAction = async (action, { routeQuery = {} } = {}) => {
+    if (!action?.endpoint) {
+        throw new Error('No action endpoint configured.');
+    }
+
+    const response = await axios({
+        method: action.method ?? 'post',
+        url: action.endpoint,
+        params: pickScope(routeQuery),
+    });
+
+    return withDetailBackToScope(response.data, routeQuery);
+};
+
+export const fetchIssueCount = async ({ range = '24h', routeQuery = {} } = {}) => {
+    const response = await axios.get('/api/issues', {
+        params: {
+            range,
+            per_page: 1,
+            ...pickScope(routeQuery),
+        },
+    });
+
+    return Number(response.data?.pagination?.total ?? 0);
 };

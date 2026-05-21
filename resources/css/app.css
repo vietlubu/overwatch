@@ -704,6 +704,14 @@ pre {
     grid-template-columns: 1.1fr 0.9fr;
 }
 
+.detail-hero-full-width {
+    grid-template-columns: 1fr;
+}
+
+.detail-stack-full-width {
+    width: 100%;
+}
+
 .code-panel {
     overflow: hidden;
     border-radius: var(--radius-lg);
@@ -870,6 +878,15 @@ pre .hljs {
 .action-button.primary {
     color: var(--crust);
     background: var(--blue);
+}
+
+.action-button:disabled {
+    cursor: wait;
+    opacity: 0.7;
+}
+
+.action-feedback {
+    color: var(--red);
 }
 
 .muted {

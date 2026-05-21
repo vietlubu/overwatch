@@ -19,7 +19,7 @@ export const navSections = [
         title: 'Overview',
         items: [
             { key: 'dashboard', label: 'Dashboard', shortcut: 'd', icon: '[]', to: { name: 'dashboard' } },
-            { key: 'issues', label: 'Issues', shortcut: 'i', icon: '[!]', badge: '1', to: { name: 'screen', params: { screenKey: 'issues' } } },
+            { key: 'issues', label: 'Issues', shortcut: 'i', icon: '[!]', to: { name: 'screen', params: { screenKey: 'issues' } } },
         ],
     },
     {
@@ -1175,6 +1175,12 @@ export const apiBlueprint = {
     dashboard: {
         endpoint: '/api/dashboard',
         shape: ['activity.metrics[]', 'application.metrics[]', 'users.tables[]'],
+    },
+    issues: {
+        listEndpoint: '/api/issues',
+        detailEndpoint: '/api/issues/{issueKey}',
+        detailToken: '{issueKey}',
+        tables: ['nw_exceptions', 'nw_logs', 'nw_issue_states'],
     },
     requests: {
         listEndpoint: '/api/requests',

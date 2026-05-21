@@ -737,6 +737,190 @@ class NightwatchApiTest extends TestCase
         );
     }
 
+    public function test_issues_index_returns_mixed_open_groups(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson("/api/issues?project_id={$this->projectOneId}");
+
+        $response->assertOk();
+        $response->assertJsonPath('kind', 'collection');
+        $response->assertJsonPath('pagination.total', 3);
+
+        $rows = collect($response->json('table.rows'));
+        $messages = $rows->pluck('issue.text');
+
+        $this->assertTrue($messages->contains('Charge gateway timeout'));
+        $this->assertTrue($messages->contains('Duplicate scope exception'));
+        $this->assertTrue($messages->contains('Payment gateway returned a 502'));
+    }
+
+    public function test_issues_index_excludes_resolved_items(): void
+    {
+        $this->seedFixtures();
+
+        DB::table('nw_issue_states')->insert([
+            'project_id' => $this->projectOneId,
+            'source_type' => 'exception',
+            'source_key' => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            'resolved_at' => now(),
+            'resolved_through_occurred_at' => DB::table('nw_exceptions')
+                ->where('project_id', $this->projectOneId)
+                ->where('group_hash', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+                ->max('occurred_at'),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = $this->getJson("/api/issues?project_id={$this->projectOneId}");
+
+        $response->assertOk();
+        $response->assertJsonPath('pagination.total', 2);
+
+        $messages = collect($response->json('table.rows'))->pluck('issue.text');
+        $this->assertFalse($messages->contains('Charge gateway timeout'));
+    }
+
+    public function test_issue_detail_returns_exception_backed_payload(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson("/api/issues/ex_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?project_id={$this->projectOneId}");
+
+        $response->assertOk();
+        $response->assertJsonPath('eyebrow', 'Issue detail');
+        $response->assertJsonPath('title', 'Charge gateway timeout');
+        $response->assertJsonPath('backTo.params.screenKey', 'issues');
+        $response->assertJsonPath('tags.0.text', 'Open');
+        $response->assertJsonPath('tags.1.text', 'Exception issue');
+        $response->assertJsonPath('actions.0.label', 'Mark resolved');
+        $response->assertJsonPath('scope.issue_key', 'ex_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    }
+
+    public function test_issue_detail_returns_log_backed_payload(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson("/api/issues/log_71717171717171717171717171717171?project_id={$this->projectOneId}");
+
+        $response->assertOk();
+        $response->assertJsonPath('title', 'Payment gateway returned a 502');
+        $response->assertJsonPath('tags.0.text', 'Open');
+        $response->assertJsonPath('tags.1.text', 'critical');
+        $response->assertJsonPath('summaryPanels.0.entries.1.value', 'API Project');
+        $response->assertJsonPath('tables.0.rows.0.log.text', 'Payment gateway returned a 502');
+        $this->assertStringContainsString('"provider": "payments"', (string) $response->json('codePanels.0.code'));
+        $this->assertStringContainsString('"channel": "nightwatch"', (string) $response->json('codePanels.1.code'));
+    }
+
+    public function test_issue_resolve_marks_issue_resolved_and_hides_from_list(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->patchJson("/api/issues/ex_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/resolve", [
+            'project_id' => $this->projectOneId,
+        ]);
+
+        $response->assertOk();
+        $response->assertJsonPath('tags.0.text', 'Resolved');
+        $response->assertJsonCount(0, 'actions');
+        $this->assertDatabaseHas('nw_issue_states', [
+            'project_id' => $this->projectOneId,
+            'source_type' => 'exception',
+            'source_key' => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        ]);
+
+        $listResponse = $this->getJson("/api/issues?project_id={$this->projectOneId}");
+
+        $listResponse->assertOk();
+        $listResponse->assertJsonPath('pagination.total', 2);
+        $messages = collect($listResponse->json('table.rows'))->pluck('issue.text');
+        $this->assertFalse($messages->contains('Charge gateway timeout'));
+    }
+
+    public function test_resolved_issue_detail_still_loads_without_actions(): void
+    {
+        $this->seedFixtures();
+
+        DB::table('nw_issue_states')->insert([
+            'project_id' => $this->projectOneId,
+            'source_type' => 'log',
+            'source_key' => '71717171717171717171717171717171',
+            'resolved_at' => now(),
+            'resolved_through_occurred_at' => DB::table('nw_logs')
+                ->where('project_id', $this->projectOneId)
+                ->where('group_hash', '71717171717171717171717171717171')
+                ->max('occurred_at'),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = $this->getJson("/api/issues/log_71717171717171717171717171717171?project_id={$this->projectOneId}");
+
+        $response->assertOk();
+        $response->assertJsonPath('tags.0.text', 'Resolved');
+        $response->assertJsonCount(0, 'actions');
+    }
+
+    public function test_resolved_issue_reappears_after_a_newer_occurrence(): void
+    {
+        $this->seedFixtures();
+
+        $this->patchJson("/api/issues/ex_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/resolve", [
+            'project_id' => $this->projectOneId,
+        ])->assertOk();
+
+        $time = CarbonImmutable::now()->addMinute();
+
+        $this->ingest($this->projectOneTokenHash, [
+            $this->exceptionEvent($time, 'exec-orders-4', 'exec-orders-4', [
+                '_group' => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                'user' => 'user-2',
+                'message' => 'Charge gateway timeout',
+                'file' => 'app/Services/BillingService.php',
+                'line' => 51,
+                'handled' => false,
+            ]),
+        ]);
+
+        $listResponse = $this->getJson("/api/issues?project_id={$this->projectOneId}");
+
+        $listResponse->assertOk();
+        $messages = collect($listResponse->json('table.rows'))->pluck('issue.text');
+        $this->assertTrue($messages->contains('Charge gateway timeout'));
+
+        $detailResponse = $this->getJson("/api/issues/ex_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?project_id={$this->projectOneId}");
+        $detailResponse->assertOk();
+        $detailResponse->assertJsonPath('tags.0.text', 'Open');
+        $detailResponse->assertJsonPath('actions.0.label', 'Mark resolved');
+    }
+
+    public function test_issue_show_requires_scope_when_issue_key_is_ambiguous(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->getJson('/api/issues/ex_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+
+        $response->assertStatus(409);
+        $response->assertJsonPath(
+            'message',
+            'Issue key [ex_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb] exists in multiple projects. Pass project_id.',
+        );
+    }
+
+    public function test_issue_resolve_requires_scope_when_issue_key_is_ambiguous(): void
+    {
+        $this->seedFixtures();
+
+        $response = $this->patchJson('/api/issues/ex_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/resolve');
+
+        $response->assertStatus(409);
+        $response->assertJsonPath(
+            'message',
+            'Issue key [ex_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb] exists in multiple projects. Pass project_id.',
+        );
+    }
+
     public function test_logs_index_returns_recent_logs_and_pagination(): void
     {
         $this->seedFixtures();
@@ -807,6 +991,7 @@ class NightwatchApiTest extends TestCase
         $duplicateCacheGroupHash = '52525252525252525252525252525252';
         $outgoingGroupHash = '61616161616161616161616161616161';
         $duplicateOutgoingGroupHash = '62626262626262626262626262626262';
+        $issueLogGroupHash = '71717171717171717171717171717171';
 
         $this->ingest($this->projectOneTokenHash, [
             $this->userEvent($baseTime, 'user-1', 'Alice Nguyen', 'alice@example.com'),
@@ -983,6 +1168,20 @@ class NightwatchApiTest extends TestCase
                 'context' => '{"worker":"orders"}',
             ]),
             $this->logEvent($baseTime->addMinutes(20)->addMilliseconds(20), 'exec-orders-2', 'exec-orders-2'),
+            $this->logEvent($baseTime->addMinutes(35)->addMilliseconds(12), 'exec-orders-3', 'exec-orders-3', [
+                '_group' => $issueLogGroupHash,
+                'level' => 'critical',
+                'message' => 'Payment gateway returned a 502',
+                'context' => '{"provider":"payments","status_code":502}',
+                'extra' => '{"channel":"nightwatch"}',
+            ]),
+            $this->logEvent($baseTime->addMinutes(35)->addMilliseconds(13), 'exec-orders-3', 'exec-orders-3', [
+                '_group' => $issueLogGroupHash,
+                'level' => 'error',
+                'message' => 'Payment gateway returned a 502',
+                'context' => '{"provider":"payments","status_code":502}',
+                'extra' => '{"channel":"nightwatch"}',
+            ]),
             $this->outgoingRequestEvent($baseTime->addMinutes(20)->addMilliseconds(30), 'exec-orders-2', 'exec-orders-2', [
                 '_group' => $outgoingGroupHash,
                 'host' => 'discord-webhook-proxy.bearstack.vn',
@@ -1214,6 +1413,13 @@ class NightwatchApiTest extends TestCase
                 'file' => 'app/Services/ScopeService.php',
                 'line' => 12,
                 'handled' => false,
+            ]),
+            $this->logEvent($baseTime->addMinutes(6)->addMilliseconds(15), 'duplicate-execution', 'duplicate-execution', [
+                '_group' => $issueLogGroupHash,
+                'level' => 'critical',
+                'message' => 'Payment gateway returned a 502',
+                'context' => '{"provider":"payments","status_code":502}',
+                'extra' => '{"channel":"nightwatch"}',
             ]),
             $this->notificationEvent($baseTime->addMinutes(6)->addMilliseconds(20), 'duplicate-execution', 'duplicate-execution', [
                 '_group' => $duplicateNotificationGroupHash,

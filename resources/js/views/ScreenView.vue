@@ -9,7 +9,7 @@ import KeyValueGrid from '../components/KeyValueGrid.vue';
 import TimelineStack from '../components/TimelineStack.vue';
 import HighlightedCode from '../components/HighlightedCode.vue';
 import { getDetail, getScreen } from '../data/mockApi';
-import { fetchLiveDetail, fetchLiveScreen, isLiveScreen } from '../data/liveScreens';
+import { fetchLiveDetail, fetchLiveScreen, isLiveScreen, runLiveDetailAction } from '../data/liveScreens';
 
 const props = defineProps({
     screenKey: {
@@ -36,11 +36,17 @@ const route = useRoute();
 
 const screenKey = computed(() => String(route.params.screenKey ?? ''));
 const detailId = computed(() => (route.params.detailId ? String(route.params.detailId) : null));
+const isExceptionLikeDetail = computed(() =>
+    screenKey.value === 'exceptions' ||
+    (screenKey.value === 'issues' && detail.value?.scope?.source_type === 'exception'),
+);
 
 const loading = ref(false);
 const error = ref(null);
 const screen = ref(null);
 const detail = ref(null);
+const detailActionKey = ref('');
+const detailActionError = ref('');
 
 let requestToken = 0;
 
@@ -63,6 +69,8 @@ const loadState = async () => {
     screen.value = baseScreen;
     detail.value = currentDetailId ? getDetail(currentScreenKey, currentDetailId) : null;
     error.value = null;
+    detailActionKey.value = '';
+    detailActionError.value = '';
 
     if (!isLiveScreen(currentScreenKey)) {
         return;
@@ -103,6 +111,29 @@ const loadState = async () => {
         if (currentToken === requestToken) {
             loading.value = false;
         }
+    }
+};
+
+const performDetailAction = async (action) => {
+    if (!action?.key || !detailId.value || !isLiveScreen(screenKey.value)) {
+        return;
+    }
+
+    detailActionKey.value = action.key;
+    detailActionError.value = '';
+
+    try {
+        await runLiveDetailAction(action, {
+            routeQuery: route.query,
+        });
+
+        detail.value = await fetchLiveDetail(screenKey.value, detailId.value, {
+            routeQuery: route.query,
+        });
+    } catch (reason) {
+        detailActionError.value = buildErrorState(reason).message;
+    } finally {
+        detailActionKey.value = '';
     }
 };
 
@@ -211,8 +242,24 @@ watch(
                 >
                     {{ tag.text }}
                 </span>
+
+                <button
+                    v-for="action in detail.actions ?? []"
+                    :key="action.key"
+                    type="button"
+                    class="action-button"
+                    :class="{ primary: action.primary }"
+                    :disabled="detailActionKey === action.key"
+                    @click="performDetailAction(action)"
+                >
+                    {{ detailActionKey === action.key ? 'Working...' : action.label }}
+                </button>
             </div>
         </div>
+
+        <section v-if="detailActionError" class="detail-card">
+            <div class="table-caption action-feedback">{{ detailActionError }}</div>
+        </section>
 
         <div class="detail-stack">
             <div v-if="detail.metrics?.length" class="metric-grid">
@@ -229,7 +276,11 @@ watch(
                 />
             </div>
 
-            <div v-if="detail.timeline || detail.codePanels?.length" class="detail-hero">
+            <div
+                v-if="detail.timeline || detail.codePanels?.length"
+                class="detail-hero"
+                :class="{ 'detail-hero-full-width': isExceptionLikeDetail }"
+            >
                 <TimelineStack
                     v-if="detail.timeline"
                     :title="detail.timeline.title"
@@ -237,7 +288,11 @@ watch(
                     :rows="detail.timeline.rows"
                 />
 
-                <div v-if="detail.codePanels?.length" class="detail-stack">
+                <div
+                    v-if="detail.codePanels?.length"
+                    class="detail-stack"
+                    :class="{ 'detail-stack-full-width': isExceptionLikeDetail }"
+                >
                     <section v-for="panel in detail.codePanels" :key="panel.title" class="code-panel">
                         <div class="code-caption">{{ panel.title }}</div>
                         <HighlightedCode :code="panel.code" :language="panel.language" />

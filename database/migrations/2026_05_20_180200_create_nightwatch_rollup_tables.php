@@ -40,7 +40,7 @@ return new class extends Migration
             $table->string('route_path')->nullable();
             $table->timestamps();
 
-            $table->unique(['bucket_start', 'project_id', 'environment', 'method', 'route_name', 'route_domain', 'route_path'], 'nw_request_route_1m_unique');
+            $table->unique(['bucket_start', 'project_id', 'method', 'route_name', 'route_domain', 'route_path'], 'nw_request_route_1m_unique');
         });
     }
 
@@ -54,7 +54,7 @@ return new class extends Migration
             $table->unsignedInteger('line')->nullable();
             $table->timestamps();
 
-            $table->unique(['bucket_start', 'project_id', 'environment', 'group_hash', 'class', 'file', 'line'], 'nw_exception_group_1m_unique');
+            $table->unique(['bucket_start', 'project_id', 'group_hash', 'class', 'file', 'line'], 'nw_exception_group_1m_unique');
         });
     }
 
@@ -68,7 +68,7 @@ return new class extends Migration
             $table->string('file')->nullable();
             $table->timestamps();
 
-            $table->unique(['bucket_start', 'project_id', 'environment', 'group_hash', 'connection', 'connection_type', 'file'], 'nw_query_group_1m_unique');
+            $table->unique(['bucket_start', 'project_id', 'group_hash', 'connection', 'connection_type', 'file'], 'nw_query_group_1m_unique');
         });
     }
 
@@ -80,7 +80,7 @@ return new class extends Migration
             $table->string('host')->nullable();
             $table->timestamps();
 
-            $table->unique(['bucket_start', 'project_id', 'environment', 'group_hash', 'host'], 'nw_outgoing_host_1m_unique');
+            $table->unique(['bucket_start', 'project_id', 'group_hash', 'host'], 'nw_outgoing_host_1m_unique');
         });
     }
 
@@ -93,7 +93,7 @@ return new class extends Migration
             $table->string('queue');
             $table->timestamps();
 
-            $table->unique(['bucket_start', 'project_id', 'environment', 'name', 'connection', 'queue'], 'nw_job_queue_1m_unique');
+            $table->unique(['bucket_start', 'project_id', 'name', 'connection', 'queue'], 'nw_job_queue_1m_unique');
         });
     }
 
@@ -106,7 +106,7 @@ return new class extends Migration
             $table->string('class')->nullable();
             $table->timestamps();
 
-            $table->unique(['bucket_start', 'project_id', 'environment', 'group_hash', 'name', 'class'], 'nw_command_1m_unique');
+            $table->unique(['bucket_start', 'project_id', 'group_hash', 'name', 'class'], 'nw_command_1m_unique');
         });
     }
 
@@ -120,7 +120,7 @@ return new class extends Migration
             $table->string('timezone')->nullable();
             $table->timestamps();
 
-            $table->unique(['bucket_start', 'project_id', 'environment', 'group_hash', 'cron', 'timezone'], 'nw_schedule_1m_unique');
+            $table->unique(['bucket_start', 'project_id', 'group_hash', 'cron', 'timezone'], 'nw_schedule_1m_unique');
         });
     }
 
@@ -131,7 +131,7 @@ return new class extends Migration
             $table->string('level', 32);
             $table->timestamps();
 
-            $table->unique(['bucket_start', 'project_id', 'environment', 'level'], 'nw_log_level_1m_unique');
+            $table->unique(['bucket_start', 'project_id', 'level'], 'nw_log_level_1m_unique');
         });
     }
 
@@ -140,7 +140,6 @@ return new class extends Migration
         $table->id();
         $table->timestampTz('bucket_start', 6);
         $table->foreignId('project_id')->constrained('nw_projects')->cascadeOnDelete();
-        $table->string('environment', 64);
         $table->unsignedBigInteger('count')->default(0);
         $table->unsignedBigInteger('error_count')->default(0);
         $table->unsignedBigInteger('failure_count')->default(0);
@@ -151,6 +150,6 @@ return new class extends Migration
         $table->unsignedBigInteger('sum_request_bytes')->default(0);
         $table->unsignedBigInteger('sum_response_bytes')->default(0);
 
-        $table->index(['project_id', 'environment', 'bucket_start'], "{$tableName}_project_env_bucket_idx");
+        $table->index(['project_id', 'bucket_start'], "{$tableName}_project_bucket_idx");
     }
 };

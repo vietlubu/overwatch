@@ -84,7 +84,7 @@ final class NightwatchPartitionManager
         ));
 
         DB::statement(sprintf(
-            'CREATE INDEX IF NOT EXISTS %1$s_project_env_occurred_idx ON %1$s (project_id, environment, occurred_at DESC)',
+            'CREATE INDEX IF NOT EXISTS %1$s_project_occurred_idx ON %1$s (project_id, occurred_at DESC)',
             $name,
         ));
         DB::statement(sprintf(

@@ -35,7 +35,6 @@ final class NightwatchRollupService
             ->whereBetween('nw_executions.occurred_at', [$from, $to])
             ->select([
                 'nw_executions.project_id',
-                'nw_executions.environment',
                 'nw_executions.occurred_at',
                 'nw_executions.duration_us',
                 'nw_request_details.method',
@@ -71,7 +70,7 @@ final class NightwatchRollupService
     {
         $rows = DB::table('nw_exceptions')
             ->whereBetween('occurred_at', [$from, $to])
-            ->select(['project_id', 'environment', 'occurred_at', 'group_hash', 'class', 'file', 'line'])
+            ->select(['project_id', 'occurred_at', 'group_hash', 'class', 'file', 'line'])
             ->get();
 
         DB::table('nw_exception_group_1m')->whereBetween('bucket_start', [$from, $to])->delete();
@@ -97,7 +96,7 @@ final class NightwatchRollupService
     {
         $rows = DB::table('nw_queries')
             ->whereBetween('occurred_at', [$from, $to])
-            ->select(['project_id', 'environment', 'occurred_at', 'group_hash', 'connection', 'connection_type', 'file', 'duration_us'])
+            ->select(['project_id', 'occurred_at', 'group_hash', 'connection', 'connection_type', 'file', 'duration_us'])
             ->get();
 
         DB::table('nw_query_group_1m')->whereBetween('bucket_start', [$from, $to])->delete();
@@ -123,7 +122,7 @@ final class NightwatchRollupService
     {
         $rows = DB::table('nw_outgoing_requests')
             ->whereBetween('occurred_at', [$from, $to])
-            ->select(['project_id', 'environment', 'occurred_at', 'group_hash', 'host', 'status_code', 'duration_us', 'request_bytes', 'response_bytes'])
+            ->select(['project_id', 'occurred_at', 'group_hash', 'host', 'status_code', 'duration_us', 'request_bytes', 'response_bytes'])
             ->get();
 
         DB::table('nw_outgoing_host_1m')->whereBetween('bucket_start', [$from, $to])->delete();
@@ -150,7 +149,6 @@ final class NightwatchRollupService
             ->whereBetween('nw_executions.occurred_at', [$from, $to])
             ->select([
                 'nw_executions.project_id',
-                'nw_executions.environment',
                 'nw_executions.occurred_at',
                 'nw_executions.duration_us',
                 'nw_job_attempt_details.name',
@@ -185,7 +183,6 @@ final class NightwatchRollupService
             ->whereBetween('nw_executions.occurred_at', [$from, $to])
             ->select([
                 'nw_executions.project_id',
-                'nw_executions.environment',
                 'nw_executions.occurred_at',
                 'nw_executions.duration_us',
                 'nw_executions.group_hash',
@@ -220,7 +217,6 @@ final class NightwatchRollupService
             ->whereBetween('nw_executions.occurred_at', [$from, $to])
             ->select([
                 'nw_executions.project_id',
-                'nw_executions.environment',
                 'nw_executions.occurred_at',
                 'nw_executions.duration_us',
                 'nw_executions.group_hash',
@@ -254,7 +250,7 @@ final class NightwatchRollupService
     {
         $rows = DB::table('nw_logs')
             ->whereBetween('occurred_at', [$from, $to])
-            ->select(['project_id', 'environment', 'occurred_at', 'level'])
+            ->select(['project_id', 'occurred_at', 'level'])
             ->get();
 
         DB::table('nw_log_level_1m')->whereBetween('bucket_start', [$from, $to])->delete();
@@ -291,7 +287,6 @@ final class NightwatchRollupService
             $key = json_encode([
                 'bucket_start' => $bucketStart->toIso8601String(),
                 'project_id' => $row->project_id,
-                'environment' => $row->environment,
                 'dimensions' => $dimensions,
             ], JSON_THROW_ON_ERROR);
 
@@ -299,7 +294,6 @@ final class NightwatchRollupService
                 $groups[$key] = [
                     'bucket_start' => $bucketStart,
                     'project_id' => $row->project_id,
-                    'environment' => $row->environment,
                     ...$dimensions,
                     'count' => 0,
                     'error_count' => 0,

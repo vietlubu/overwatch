@@ -32,9 +32,8 @@ class NightwatchListenCommandTest extends TestCase
 
         $manager = app(NightwatchProjectKeyManager::class);
         $project = $manager->createProject('listener-test', 'Listener Test');
-        $key = $manager->createKey($project, 'testing', 'primary');
 
-        $this->tokenHash = $key['token_hash'];
+        $this->tokenHash = $project['token_hash'];
         $this->listenerPort = $this->availablePort();
 
         $this->listener = new Process(

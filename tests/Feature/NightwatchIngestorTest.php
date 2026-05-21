@@ -24,8 +24,6 @@ class NightwatchIngestorTest extends TestCase
 
     private int $projectId;
 
-    private int $tokenId;
-
     protected function setUp(): void
     {
         parent::setUp();
@@ -37,20 +35,12 @@ class NightwatchIngestorTest extends TestCase
             'name' => 'Demo Project',
             'slug' => 'demo-project',
             'is_active' => true,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        $this->tokenId = (int) DB::table('nw_ingest_tokens')->insertGetId([
-            'project_id' => $this->projectId,
-            'environment' => 'production',
             'token_hash' => $this->tokenHash,
-            'key_name' => 'primary',
             'secret_sha256' => NightwatchProjectKeyManager::secretSha256($secret),
             'secret_fingerprint' => NightwatchProjectKeyManager::secretFingerprint(NightwatchProjectKeyManager::secretSha256($secret)),
             'secret_last_four' => 'cret',
-            'is_active' => true,
-            'revoked_at' => null,
+            'last_seen_at' => null,
+            'tags' => json_encode([], JSON_THROW_ON_ERROR),
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -95,15 +85,12 @@ class NightwatchIngestorTest extends TestCase
         $this->assertDatabaseCount('nw_cache_events', 1);
         $this->assertDatabaseHas('nw_ingest_batches', [
             'project_id' => $this->projectId,
-            'environment' => 'production',
-            'ingest_token_id' => $this->tokenId,
             'token_hash' => $this->tokenHash,
             'ack_status' => 'accepted',
         ]);
 
         $this->assertDatabaseHas('nw_users', [
             'project_id' => $this->projectId,
-            'environment' => 'production',
             'external_user_id' => 'user-1',
             'username' => 'demo@example.com',
         ]);
@@ -128,7 +115,6 @@ class NightwatchIngestorTest extends TestCase
 
         $job = DB::table('nw_jobs')
             ->where('project_id', $this->projectId)
-            ->where('environment', 'production')
             ->where('job_id', 'job-1')
             ->first();
 
@@ -145,7 +131,6 @@ class NightwatchIngestorTest extends TestCase
 
         $this->assertDatabaseHas('nw_request_route_1m', [
             'project_id' => $this->projectId,
-            'environment' => 'production',
             'method' => 'GET',
             'route_name' => 'orders.show',
             'count' => 1,
@@ -153,14 +138,12 @@ class NightwatchIngestorTest extends TestCase
 
         $this->assertDatabaseHas('nw_command_1m', [
             'project_id' => $this->projectId,
-            'environment' => 'production',
             'name' => 'orders:sync',
             'count' => 1,
         ]);
 
         $this->assertDatabaseHas('nw_schedule_1m', [
             'project_id' => $this->projectId,
-            'environment' => 'production',
             'cron' => '*/5 * * * *',
             'count' => 1,
         ]);
@@ -171,25 +154,17 @@ class NightwatchIngestorTest extends TestCase
         $sharedTrace = (string) Str::uuid();
         $time = CarbonImmutable::parse('2026-05-20 10:30:00 UTC');
         $secondSecret = 'fixture-secret-two';
+        $secondTokenHash = NightwatchProjectKeyManager::tokenHashForSecret($secondSecret);
         $secondProjectId = DB::table('nw_projects')->insertGetId([
             'name' => 'Other Project',
             'slug' => 'other-project',
             'is_active' => true,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-        $secondTokenHash = NightwatchProjectKeyManager::tokenHashForSecret($secondSecret);
-
-        DB::table('nw_ingest_tokens')->insert([
-            'project_id' => $secondProjectId,
-            'environment' => 'production',
             'token_hash' => $secondTokenHash,
-            'key_name' => 'primary',
             'secret_sha256' => NightwatchProjectKeyManager::secretSha256($secondSecret),
             'secret_fingerprint' => NightwatchProjectKeyManager::secretFingerprint(NightwatchProjectKeyManager::secretSha256($secondSecret)),
             'secret_last_four' => '-two',
-            'is_active' => true,
-            'revoked_at' => null,
+            'last_seen_at' => null,
+            'tags' => json_encode([], JSON_THROW_ON_ERROR),
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -201,12 +176,10 @@ class NightwatchIngestorTest extends TestCase
         $this->assertSame(2, DB::table('nw_executions')->where('execution_id', $sharedTrace)->count());
         $this->assertDatabaseHas('nw_executions', [
             'project_id' => $this->projectId,
-            'environment' => 'production',
             'execution_id' => $sharedTrace,
         ]);
         $this->assertDatabaseHas('nw_executions', [
             'project_id' => $secondProjectId,
-            'environment' => 'production',
             'execution_id' => $sharedTrace,
         ]);
         $this->assertSame(2, DB::table('nw_request_details')->where('execution_id', $sharedTrace)->count());
@@ -214,11 +187,10 @@ class NightwatchIngestorTest extends TestCase
 
     public function test_it_rejects_revoked_or_inactive_keys(): void
     {
-        DB::table('nw_ingest_tokens')
-            ->where('id', $this->tokenId)
+        DB::table('nw_projects')
+            ->where('id', $this->projectId)
             ->update([
                 'is_active' => false,
-                'revoked_at' => now(),
                 'updated_at' => now(),
             ]);
 
@@ -231,7 +203,6 @@ class NightwatchIngestorTest extends TestCase
         } finally {
             $this->assertDatabaseHas('nw_ingest_batches', [
                 'token_hash' => $this->tokenHash,
-                'ingest_token_id' => null,
                 'ack_status' => 'rejected',
             ]);
         }
@@ -348,7 +319,6 @@ class NightwatchIngestorTest extends TestCase
         DB::table('nw_request_route_1m')->insert([
             'bucket_start' => $oldTime->startOfMinute(),
             'project_id' => $this->projectId,
-            'environment' => 'production',
             'method' => 'GET',
             'route_name' => 'orders.show',
             'route_domain' => 'app.test',

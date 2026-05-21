@@ -2,7 +2,7 @@
 
 Overwatch là Laravel ingest server cho `laravel/nightwatch`.
 
-Repo này nhận payload TCP từ các Laravel app khác, xác thực ingest key theo `project/environment`, và lưu dữ liệu vào database để phục vụ API, rollup, cleanup, và các bước phân tích tiếp theo.
+Repo này nhận payload TCP từ các Laravel app khác, xác thực ingest key theo `project`, và lưu dữ liệu vào database để phục vụ API, rollup, cleanup, và các bước phân tích tiếp theo.
 
 ## Repo này dùng để làm gì
 
@@ -120,11 +120,10 @@ OVERWATCH_CLEANUP_SCHEDULE_DAILY_AT=02:00
 Tạo một tenant cho app sẽ được monitor:
 
 ```bash
-php artisan nightwatch:project:create demo-app --name="Demo App"
-php artisan nightwatch:key:create demo-app --environment=local
+php artisan nightwatch:project:create demo-app --name="Demo App" --tags=internal,local
 ```
 
-Lệnh tạo key sẽ in ra một đoạn env như sau:
+Lệnh này sẽ tạo project và sinh ingest key ngay trong một bước. Secret chỉ được hiển thị đúng một lần, kèm đoạn env như sau:
 
 ```env
 NIGHTWATCH_TOKEN=...
@@ -134,6 +133,18 @@ NIGHTWATCH_SERVER=your-server-name
 ```
 
 `NIGHTWATCH_TOKEN` là secret, chỉ được hiển thị một lần. Hãy copy ngay sang project cần monitor.
+
+Nếu cần cập nhật metadata nội bộ của project:
+
+```bash
+php artisan nightwatch:project:update demo-app --name="Demo App" --tags=internal,staging
+```
+
+Nếu cần rotate ingest key:
+
+```bash
+php artisan nightwatch:project:rotate-key demo-app
+```
 
 ## Setup một project Laravel khác dùng Nightwatch với Overwatch
 
@@ -190,7 +201,7 @@ Chỉ cần Overwatch listener đang chạy, token đúng, và app monitor có t
 ## Luồng tích hợp ngắn gọn
 
 1. Chạy Overwatch bằng `php artisan nightwatch:listen`.
-2. Tạo `project` và `ingest key` trên Overwatch.
+2. Tạo `project` trên Overwatch, lệnh create sẽ sinh ingest key luôn.
 3. Cài `laravel/nightwatch` ở app khác.
 4. Copy `NIGHTWATCH_TOKEN` và `NIGHTWATCH_INGEST_URI` sang app đó.
 5. Trigger request/command/job để app gửi event về Overwatch.
@@ -205,7 +216,7 @@ php artisan nightwatch:test-events --timeout=25
 
 Harness sẽ tự:
 
-1. tạo project/key tạm
+1. tạo hoặc reuse project self-test và rotate key cho run hiện tại
 2. chạy listener và helper processes
 3. phát request, command, queue, schedule, notification, mail, cache, query, outgoing request, exception
 4. kiểm tra dữ liệu đã được lưu vào database
@@ -216,8 +227,9 @@ Harness sẽ tự:
 
 ```bash
 php artisan nightwatch:listen
-php artisan nightwatch:project:create {slug} --name="Project Name"
-php artisan nightwatch:key:create {project} --environment=local
+php artisan nightwatch:project:create {slug} --name="Project Name" --tags=internal
+php artisan nightwatch:project:update {project} --name="Project Name" --tags=internal,prod
+php artisan nightwatch:project:rotate-key {project}
 php artisan nightwatch:test-events
 php artisan nightwatch:rollup
 php artisan nightwatch:cleanup

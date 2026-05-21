@@ -30,13 +30,8 @@ class NightwatchSelfTestHarnessTest extends TestCase
             '--timeout' => 25,
         ])->assertSuccessful();
 
-        $environment = (string) DB::table('nw_ingest_tokens')
-            ->latest('id')
-            ->value('environment');
-
         $summary = DB::table('nw_raw_events')
             ->select('event_type', DB::raw('count(*) as aggregate'))
-            ->where('environment', $environment)
             ->groupBy('event_type')
             ->pluck('aggregate', 'event_type')
             ->map(fn ($count) => (int) $count)

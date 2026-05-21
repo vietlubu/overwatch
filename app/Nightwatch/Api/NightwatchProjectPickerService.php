@@ -2,7 +2,6 @@
 
 namespace App\Nightwatch\Api;
 
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 final class NightwatchProjectPickerService
@@ -10,27 +9,9 @@ final class NightwatchProjectPickerService
     public function index(): array
     {
         $projects = DB::table('nw_projects')
-            ->select(['id', 'slug', 'name', 'is_active'])
+            ->select(['id', 'slug', 'name', 'is_active', 'tags'])
             ->orderBy('name')
             ->get();
-
-        $environments = DB::table('nw_ingest_tokens')
-            ->select(['project_id', 'environment'])
-            ->whereNotNull('environment')
-            ->union(
-                DB::table('nw_executions')
-                    ->select(['project_id', 'environment'])
-                    ->whereNotNull('environment'),
-            )
-            ->get()
-            ->groupBy('project_id')
-            ->map(fn (Collection $rows): array => $rows
-                ->pluck('environment')
-                ->filter()
-                ->unique()
-                ->sort()
-                ->values()
-                ->all());
 
         return [
             'projects' => $projects
@@ -39,9 +20,27 @@ final class NightwatchProjectPickerService
                     'slug' => (string) $project->slug,
                     'name' => (string) $project->name,
                     'is_active' => (bool) $project->is_active,
-                    'environments' => $environments->get($project->id, []),
+                    'tags' => $this->decodeTags($project->tags),
                 ])
                 ->all(),
         ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function decodeTags(mixed $value): array
+    {
+        if ($value === null) {
+            return [];
+        }
+
+        $decoded = is_string($value) ? json_decode($value, true) : $value;
+
+        if (! is_array($decoded)) {
+            return [];
+        }
+
+        return array_values(array_filter(array_map(static fn (mixed $tag): string => trim((string) $tag), $decoded)));
     }
 }

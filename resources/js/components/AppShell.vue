@@ -101,32 +101,23 @@ const projectEntries = computed(() => {
         {
             id: 'all-projects',
             label: 'All projects',
-            description: 'Clear project and environment filters.',
+            description: 'Clear the active project filter.',
             projectKey: 'global',
             projectId: null,
-            environment: null,
+            tags: [],
         },
     ];
 
     projects.value.forEach((project) => {
         entries.push({
-            id: `project-${project.id}-all`,
+            id: `project-${project.id}`,
             label: project.name,
-            description: `All environments for ${project.slug}.`,
+            description: project.tags?.length
+                ? `${project.slug} · ${project.tags.join(', ')}`
+                : `Scope to ${project.slug}.`,
             projectKey: project.slug,
             projectId: String(project.id),
-            environment: null,
-        });
-
-        project.environments.forEach((environment) => {
-            entries.push({
-                id: `project-${project.id}-${environment}`,
-                label: project.name,
-                description: `${project.slug} scoped to ${environment}.`,
-                projectKey: project.slug,
-                projectId: String(project.id),
-                environment,
-            });
+            tags: Array.isArray(project.tags) ? project.tags : [],
         });
     });
 
@@ -146,15 +137,11 @@ const currentProjectName = computed(() => {
 });
 
 const currentProjectMeta = computed(() => {
-    const environment = scopedQuery.value.environment ?? null;
-
     if (!scopedQuery.value.project_id) {
         return 'Overwatch Nightwatch Console · v0.1';
     }
 
-    return environment
-        ? `${environment} · Overwatch Nightwatch Console · v0.1`
-        : `all environments · Overwatch Nightwatch Console · v0.1`;
+    return 'project scoped · Overwatch Nightwatch Console · v0.1';
 });
 
 const commandActions = computed(() => [
@@ -302,9 +289,7 @@ const fetchProjectOptions = async () => {
 
 const syncProjectPickerIndex = () => {
     const matchIndex = projectEntries.value.findIndex(
-        (entry) =>
-            String(entry.projectId ?? '') === String(scopedQuery.value.project_id ?? '') &&
-            String(entry.environment ?? '') === String(scopedQuery.value.environment ?? ''),
+        (entry) => String(entry.projectId ?? '') === String(scopedQuery.value.project_id ?? ''),
     );
 
     projectPickerIndex.value = matchIndex >= 0 ? matchIndex : 0;
@@ -336,12 +321,6 @@ const applyProjectScope = async (entry) => {
         query.project_id = entry.projectId;
     } else {
         delete query.project_id;
-    }
-
-    if (entry.environment) {
-        query.environment = entry.environment;
-    } else {
-        delete query.environment;
     }
 
     closeProjectPicker();

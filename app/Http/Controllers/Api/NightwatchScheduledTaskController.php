@@ -19,7 +19,7 @@ final class NightwatchScheduledTaskController extends Controller
     {
         $filters = $request->validate([
             'project_id' => ['nullable', 'integer', 'exists:nw_projects,id'],
-            'environment' => ['nullable', 'string', 'max:64'],
+            'environment' => ['prohibited'],
             'range' => ['nullable', 'in:1h,24h,7d,14d,30d'],
             'search' => ['nullable', 'string', 'max:255'],
             'page' => ['nullable', 'integer', 'min:1'],
@@ -33,7 +33,7 @@ final class NightwatchScheduledTaskController extends Controller
     {
         $filters = $request->validate([
             'project_id' => ['nullable', 'integer', 'exists:nw_projects,id'],
-            'environment' => ['nullable', 'string', 'max:64'],
+            'environment' => ['prohibited'],
         ]);
 
         return response()->json($this->service->show($groupHash, $filters));

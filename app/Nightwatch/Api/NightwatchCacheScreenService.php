@@ -30,7 +30,6 @@ final class NightwatchCacheScreenService
         $groups = $rows
             ->groupBy(fn (object $row): string => implode('|', [
                 $row->project_id,
-                $row->environment,
                 $row->group_hash,
             ]))
             ->map(fn (Collection $group): array => $this->mapListGroup($group))
@@ -99,8 +98,7 @@ final class NightwatchCacheScreenService
         $scopes = DB::table('nw_cache_events')
             ->where('group_hash', $groupHash)
             ->when($filters['project_id'] ?? null, fn (Builder $query, int $projectId) => $query->where('project_id', $projectId))
-            ->when($filters['environment'] ?? null, fn (Builder $query, string $environment) => $query->where('environment', $environment))
-            ->select(['project_id', 'environment'])
+            ->select(['project_id'])
             ->distinct()
             ->limit(2)
             ->get();
@@ -111,13 +109,12 @@ final class NightwatchCacheScreenService
 
         if ($scopes->count() > 1) {
             throw new ConflictHttpException(
-                "Cache group hash [{$groupHash}] exists in multiple project/environment scopes. Pass project_id and environment.",
+                "Cache group hash [{$groupHash}] exists in multiple projects. Pass project_id.",
             );
         }
 
         $events = $this->baseQuery([
             'project_id' => $scopes->first()->project_id,
-            'environment' => $scopes->first()->environment,
         ], applyRange: false)
             ->where('cache.group_hash', $groupHash)
             ->orderByDesc('cache.occurred_at')
@@ -144,7 +141,6 @@ final class NightwatchCacheScreenService
             ],
             'scope' => [
                 'project_id' => $latest->project_id,
-                'environment' => $latest->environment,
                 'group_hash' => $groupHash,
             ],
             'metrics' => [
@@ -231,12 +227,10 @@ final class NightwatchCacheScreenService
         return DB::table('nw_cache_events as cache')
             ->leftJoin('nw_executions as executions', function ($join): void {
                 $join->on('executions.project_id', '=', 'cache.project_id')
-                    ->on('executions.environment', '=', 'cache.environment')
                     ->on('executions.execution_id', '=', 'cache.execution_id');
             })
             ->leftJoin('nw_request_details as request_details', 'request_details.execution_row_id', '=', 'executions.id')
             ->when($filters['project_id'] ?? null, fn (Builder $query, int $projectId) => $query->where('cache.project_id', $projectId))
-            ->when($filters['environment'] ?? null, fn (Builder $query, string $environment) => $query->where('cache.environment', $environment))
             ->when($applyRange, fn (Builder $query) => $query->where('cache.occurred_at', '>=', $from))
             ->when($search, function (Builder $query, string $searchTerm): void {
                 $like = '%'.$searchTerm.'%';
@@ -254,7 +248,6 @@ final class NightwatchCacheScreenService
             ->select([
                 'cache.id',
                 'cache.project_id',
-                'cache.environment',
                 'cache.group_hash',
                 'cache.occurred_at',
                 'cache.execution_id',
@@ -278,13 +271,12 @@ final class NightwatchCacheScreenService
         return [
             'sort_at' => (string) $latest->occurred_at,
             'row' => [
-                'id' => sha1($latest->project_id.'|'.$latest->environment.'|'.$latest->group_hash),
+                'id' => sha1($latest->project_id.'|'.$latest->group_hash),
                 'href' => [
                     'name' => 'screen',
                     'params' => ['screenKey' => 'cache', 'detailId' => $latest->group_hash],
                     'query' => [
                         'project_id' => (string) $latest->project_id,
-                        'environment' => $latest->environment,
                     ],
                 ],
                 'key' => $this->presenter->cell(
@@ -354,7 +346,6 @@ final class NightwatchCacheScreenService
     {
         return [
             'project_id' => $filters['project_id'] ?? null,
-            'environment' => $filters['environment'] ?? null,
             'range' => $filters['range'] ?? '24h',
             'search' => $filters['search'] ?? null,
             'page' => (int) ($filters['page'] ?? 1),

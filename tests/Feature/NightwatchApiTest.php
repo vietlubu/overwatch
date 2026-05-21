@@ -46,7 +46,7 @@ class NightwatchApiTest extends TestCase
     {
         $this->seedFixtures();
 
-        $response = $this->getJson("/api/requests?project_id={$this->projectOneId}&environment=production&per_page=1");
+        $response = $this->getJson("/api/requests?project_id={$this->projectOneId}&per_page=1");
 
         $response->assertOk();
         $response->assertJsonPath('kind', 'collection');
@@ -58,7 +58,7 @@ class NightwatchApiTest extends TestCase
         $response->assertJsonCount(1, 'table.rows');
     }
 
-    public function test_projects_index_returns_available_projects_and_environments(): void
+    public function test_projects_index_returns_available_projects_and_tags(): void
     {
         $this->seedFixtures();
 
@@ -67,7 +67,7 @@ class NightwatchApiTest extends TestCase
         $response->assertOk();
         $response->assertJsonPath('projects.0.name', 'API Project');
         $response->assertJsonPath('projects.0.slug', 'api-project');
-        $response->assertJsonPath('projects.0.environments.0', 'production');
+        $response->assertJsonPath('projects.0.tags.0', 'internal');
         $response->assertJsonPath('projects.1.name', 'Other Project');
     }
 
@@ -75,7 +75,7 @@ class NightwatchApiTest extends TestCase
     {
         $this->seedFixtures();
 
-        $response = $this->getJson("/api/requests/exec-orders-2?project_id={$this->projectOneId}&environment=production");
+        $response = $this->getJson("/api/requests/exec-orders-2?project_id={$this->projectOneId}");
 
         $response->assertOk();
         $response->assertJsonPath('title', 'GET /orders/{order}');
@@ -90,7 +90,7 @@ class NightwatchApiTest extends TestCase
     {
         $this->seedFixtures();
 
-        $response = $this->getJson("/api/requests/missing-execution?project_id={$this->projectOneId}&environment=production");
+        $response = $this->getJson("/api/requests/missing-execution?project_id={$this->projectOneId}");
 
         $response->assertNotFound();
         $response->assertJsonPath('message', 'Nightwatch request execution [missing-execution] was not found.');
@@ -105,7 +105,7 @@ class NightwatchApiTest extends TestCase
         $response->assertStatus(409);
         $response->assertJsonPath(
             'message',
-            'Execution id [duplicate-execution] exists in multiple project/environment scopes. Pass project_id and environment.',
+            'Execution id [duplicate-execution] exists in multiple projects. Pass project_id.',
         );
     }
 
@@ -113,7 +113,7 @@ class NightwatchApiTest extends TestCase
     {
         $this->seedFixtures();
 
-        $response = $this->getJson("/api/exceptions?project_id={$this->projectOneId}&environment=production");
+        $response = $this->getJson("/api/exceptions?project_id={$this->projectOneId}");
 
         $response->assertOk();
         $response->assertJsonPath('kind', 'collection');
@@ -128,7 +128,7 @@ class NightwatchApiTest extends TestCase
         $this->seedFixtures();
 
         $groupHash = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-        $response = $this->getJson("/api/exceptions/{$groupHash}?project_id={$this->projectOneId}&environment=production");
+        $response = $this->getJson("/api/exceptions/{$groupHash}?project_id={$this->projectOneId}");
 
         $response->assertOk();
         $response->assertJsonPath('title', 'Charge gateway timeout');
@@ -142,7 +142,7 @@ class NightwatchApiTest extends TestCase
     {
         $this->seedFixtures();
 
-        $response = $this->getJson("/api/exceptions/cccccccccccccccccccccccccccccccc?project_id={$this->projectOneId}&environment=production");
+        $response = $this->getJson("/api/exceptions/cccccccccccccccccccccccccccccccc?project_id={$this->projectOneId}");
 
         $response->assertNotFound();
         $response->assertJsonPath(
@@ -160,7 +160,7 @@ class NightwatchApiTest extends TestCase
         $response->assertStatus(409);
         $response->assertJsonPath(
             'message',
-            'Exception group hash [bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb] exists in multiple project/environment scopes. Pass project_id and environment.',
+            'Exception group hash [bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb] exists in multiple projects. Pass project_id.',
         );
     }
 
@@ -168,7 +168,7 @@ class NightwatchApiTest extends TestCase
     {
         $this->seedFixtures();
 
-        $response = $this->getJson("/api/jobs?project_id={$this->projectOneId}&environment=production&search=SendReceipt&per_page=1");
+        $response = $this->getJson("/api/jobs?project_id={$this->projectOneId}&search=SendReceipt&per_page=1");
 
         $response->assertOk();
         $response->assertJsonPath('kind', 'collection');
@@ -184,7 +184,7 @@ class NightwatchApiTest extends TestCase
     {
         $this->seedFixtures();
 
-        $response = $this->getJson("/api/jobs/job-sync-order?project_id={$this->projectOneId}&environment=production");
+        $response = $this->getJson("/api/jobs/job-sync-order?project_id={$this->projectOneId}");
 
         $response->assertOk();
         $response->assertJsonPath('title', 'App\\Jobs\\SyncOrder');
@@ -200,7 +200,7 @@ class NightwatchApiTest extends TestCase
     {
         $this->seedFixtures();
 
-        $response = $this->getJson("/api/jobs/missing-job?project_id={$this->projectOneId}&environment=production");
+        $response = $this->getJson("/api/jobs/missing-job?project_id={$this->projectOneId}");
 
         $response->assertNotFound();
         $response->assertJsonPath('message', 'Nightwatch job [missing-job] was not found.');
@@ -215,7 +215,7 @@ class NightwatchApiTest extends TestCase
         $response->assertStatus(409);
         $response->assertJsonPath(
             'message',
-            'Job id [duplicate-job] exists in multiple project/environment scopes. Pass project_id and environment.',
+            'Job id [duplicate-job] exists in multiple projects. Pass project_id.',
         );
     }
 
@@ -223,7 +223,7 @@ class NightwatchApiTest extends TestCase
     {
         $this->seedFixtures();
 
-        $response = $this->getJson("/api/commands?project_id={$this->projectOneId}&environment=production&search=send-scheduled-notification&per_page=1");
+        $response = $this->getJson("/api/commands?project_id={$this->projectOneId}&search=send-scheduled-notification&per_page=1");
 
         $response->assertOk();
         $response->assertJsonPath('kind', 'collection');
@@ -238,7 +238,7 @@ class NightwatchApiTest extends TestCase
         $this->seedFixtures();
 
         $groupHash = 'cccccccccccccccccccccccccccccccc';
-        $response = $this->getJson("/api/commands/{$groupHash}?project_id={$this->projectOneId}&environment=production");
+        $response = $this->getJson("/api/commands/{$groupHash}?project_id={$this->projectOneId}");
 
         $response->assertOk();
         $response->assertJsonPath('title', 'app:send-scheduled-notification');
@@ -254,7 +254,7 @@ class NightwatchApiTest extends TestCase
     {
         $this->seedFixtures();
 
-        $response = $this->getJson("/api/commands/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee?project_id={$this->projectOneId}&environment=production");
+        $response = $this->getJson("/api/commands/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee?project_id={$this->projectOneId}");
 
         $response->assertNotFound();
         $response->assertJsonPath(
@@ -272,7 +272,7 @@ class NightwatchApiTest extends TestCase
         $response->assertStatus(409);
         $response->assertJsonPath(
             'message',
-            'Command group hash [dddddddddddddddddddddddddddddddd] exists in multiple project/environment scopes. Pass project_id and environment.',
+            'Command group hash [dddddddddddddddddddddddddddddddd] exists in multiple projects. Pass project_id.',
         );
     }
 
@@ -280,7 +280,7 @@ class NightwatchApiTest extends TestCase
     {
         $this->seedFixtures();
 
-        $response = $this->getJson("/api/scheduled-tasks?project_id={$this->projectOneId}&environment=production&search=send-scheduled-notification&per_page=1");
+        $response = $this->getJson("/api/scheduled-tasks?project_id={$this->projectOneId}&search=send-scheduled-notification&per_page=1");
 
         $response->assertOk();
         $response->assertJsonPath('kind', 'collection');
@@ -296,7 +296,7 @@ class NightwatchApiTest extends TestCase
         $this->seedFixtures();
 
         $groupHash = 'ffffffffffffffffffffffffffffffff';
-        $response = $this->getJson("/api/scheduled-tasks/{$groupHash}?project_id={$this->projectOneId}&environment=production");
+        $response = $this->getJson("/api/scheduled-tasks/{$groupHash}?project_id={$this->projectOneId}");
 
         $response->assertOk();
         $response->assertJsonPath('title', 'php artisan app:send-scheduled-notification');
@@ -312,7 +312,7 @@ class NightwatchApiTest extends TestCase
     {
         $this->seedFixtures();
 
-        $response = $this->getJson("/api/scheduled-tasks/12121212121212121212121212121212?project_id={$this->projectOneId}&environment=production");
+        $response = $this->getJson("/api/scheduled-tasks/12121212121212121212121212121212?project_id={$this->projectOneId}");
 
         $response->assertNotFound();
         $response->assertJsonPath(
@@ -330,7 +330,7 @@ class NightwatchApiTest extends TestCase
         $response->assertStatus(409);
         $response->assertJsonPath(
             'message',
-            'Scheduled task group hash [abababababababababababababababab] exists in multiple project/environment scopes. Pass project_id and environment.',
+            'Scheduled task group hash [abababababababababababababababab] exists in multiple projects. Pass project_id.',
         );
     }
 
@@ -338,7 +338,7 @@ class NightwatchApiTest extends TestCase
     {
         $this->seedFixtures();
 
-        $response = $this->getJson("/api/queries?project_id={$this->projectOneId}&environment=production&search=activity_logs&per_page=1");
+        $response = $this->getJson("/api/queries?project_id={$this->projectOneId}&search=activity_logs&per_page=1");
 
         $response->assertOk();
         $response->assertJsonPath('kind', 'collection');
@@ -354,7 +354,7 @@ class NightwatchApiTest extends TestCase
         $this->seedFixtures();
 
         $groupHash = '99999999999999999999999999999999';
-        $response = $this->getJson("/api/queries/{$groupHash}?project_id={$this->projectOneId}&environment=production");
+        $response = $this->getJson("/api/queries/{$groupHash}?project_id={$this->projectOneId}");
 
         $response->assertOk();
         $this->assertStringContainsString('insert into activity_logs', (string) $response->json('title'));
@@ -371,7 +371,7 @@ class NightwatchApiTest extends TestCase
     {
         $this->seedFixtures();
 
-        $response = $this->getJson("/api/queries/56565656565656565656565656565656?project_id={$this->projectOneId}&environment=production");
+        $response = $this->getJson("/api/queries/56565656565656565656565656565656?project_id={$this->projectOneId}");
 
         $response->assertNotFound();
         $response->assertJsonPath(
@@ -389,7 +389,7 @@ class NightwatchApiTest extends TestCase
         $response->assertStatus(409);
         $response->assertJsonPath(
             'message',
-            'Query group hash [78787878787878787878787878787878] exists in multiple project/environment scopes. Pass project_id and environment.',
+            'Query group hash [78787878787878787878787878787878] exists in multiple projects. Pass project_id.',
         );
     }
 
@@ -397,7 +397,7 @@ class NightwatchApiTest extends TestCase
     {
         $this->seedFixtures();
 
-        $response = $this->getJson("/api/notifications?project_id={$this->projectOneId}&environment=production&search=PostViewed&per_page=1");
+        $response = $this->getJson("/api/notifications?project_id={$this->projectOneId}&search=PostViewed&per_page=1");
 
         $response->assertOk();
         $response->assertJsonPath('kind', 'collection');
@@ -412,7 +412,7 @@ class NightwatchApiTest extends TestCase
         $this->seedFixtures();
 
         $groupHash = '31313131313131313131313131313131';
-        $response = $this->getJson("/api/notifications/{$groupHash}?project_id={$this->projectOneId}&environment=production");
+        $response = $this->getJson("/api/notifications/{$groupHash}?project_id={$this->projectOneId}");
 
         $response->assertOk();
         $response->assertJsonPath('title', 'App\\Notifications\\PostViewed');
@@ -428,7 +428,7 @@ class NightwatchApiTest extends TestCase
     {
         $this->seedFixtures();
 
-        $response = $this->getJson("/api/notifications/34343434343434343434343434343434?project_id={$this->projectOneId}&environment=production");
+        $response = $this->getJson("/api/notifications/34343434343434343434343434343434?project_id={$this->projectOneId}");
 
         $response->assertNotFound();
         $response->assertJsonPath(
@@ -446,7 +446,7 @@ class NightwatchApiTest extends TestCase
         $response->assertStatus(409);
         $response->assertJsonPath(
             'message',
-            'Notification group hash [32323232323232323232323232323232] exists in multiple project/environment scopes. Pass project_id and environment.',
+            'Notification group hash [32323232323232323232323232323232] exists in multiple projects. Pass project_id.',
         );
     }
 
@@ -454,7 +454,7 @@ class NightwatchApiTest extends TestCase
     {
         $this->seedFixtures();
 
-        $response = $this->getJson("/api/mail?project_id={$this->projectOneId}&environment=production&search=Weekly%20digest&per_page=1");
+        $response = $this->getJson("/api/mail?project_id={$this->projectOneId}&search=Weekly%20digest&per_page=1");
 
         $response->assertOk();
         $response->assertJsonPath('kind', 'collection');
@@ -469,7 +469,7 @@ class NightwatchApiTest extends TestCase
         $this->seedFixtures();
 
         $groupHash = '41414141414141414141414141414141';
-        $response = $this->getJson("/api/mail/{$groupHash}?project_id={$this->projectOneId}&environment=production");
+        $response = $this->getJson("/api/mail/{$groupHash}?project_id={$this->projectOneId}");
 
         $response->assertOk();
         $response->assertJsonPath('title', 'Weekly digest');
@@ -485,7 +485,7 @@ class NightwatchApiTest extends TestCase
     {
         $this->seedFixtures();
 
-        $response = $this->getJson("/api/mail/43434343434343434343434343434343?project_id={$this->projectOneId}&environment=production");
+        $response = $this->getJson("/api/mail/43434343434343434343434343434343?project_id={$this->projectOneId}");
 
         $response->assertNotFound();
         $response->assertJsonPath(
@@ -503,7 +503,7 @@ class NightwatchApiTest extends TestCase
         $response->assertStatus(409);
         $response->assertJsonPath(
             'message',
-            'Mail group hash [42424242424242424242424242424242] exists in multiple project/environment scopes. Pass project_id and environment.',
+            'Mail group hash [42424242424242424242424242424242] exists in multiple projects. Pass project_id.',
         );
     }
 
@@ -511,7 +511,7 @@ class NightwatchApiTest extends TestCase
     {
         $this->seedFixtures();
 
-        $response = $this->getJson("/api/cache?project_id={$this->projectOneId}&environment=production&search=lightyear&per_page=1");
+        $response = $this->getJson("/api/cache?project_id={$this->projectOneId}&search=lightyear&per_page=1");
 
         $response->assertOk();
         $response->assertJsonPath('kind', 'collection');
@@ -528,7 +528,7 @@ class NightwatchApiTest extends TestCase
         $this->seedFixtures();
 
         $groupHash = '51515151515151515151515151515151';
-        $response = $this->getJson("/api/cache/{$groupHash}?project_id={$this->projectOneId}&environment=production");
+        $response = $this->getJson("/api/cache/{$groupHash}?project_id={$this->projectOneId}");
 
         $response->assertOk();
         $response->assertJsonPath('title', 'lightyear:cache:session:9f0b');
@@ -544,7 +544,7 @@ class NightwatchApiTest extends TestCase
     {
         $this->seedFixtures();
 
-        $response = $this->getJson("/api/cache/53535353535353535353535353535353?project_id={$this->projectOneId}&environment=production");
+        $response = $this->getJson("/api/cache/53535353535353535353535353535353?project_id={$this->projectOneId}");
 
         $response->assertNotFound();
         $response->assertJsonPath(
@@ -562,7 +562,7 @@ class NightwatchApiTest extends TestCase
         $response->assertStatus(409);
         $response->assertJsonPath(
             'message',
-            'Cache group hash [52525252525252525252525252525252] exists in multiple project/environment scopes. Pass project_id and environment.',
+            'Cache group hash [52525252525252525252525252525252] exists in multiple projects. Pass project_id.',
         );
     }
 
@@ -570,7 +570,7 @@ class NightwatchApiTest extends TestCase
     {
         $this->seedFixtures();
 
-        $response = $this->getJson("/api/outgoing-requests?project_id={$this->projectOneId}&environment=production&search=discord-webhook-proxy&per_page=1");
+        $response = $this->getJson("/api/outgoing-requests?project_id={$this->projectOneId}&search=discord-webhook-proxy&per_page=1");
 
         $response->assertOk();
         $response->assertJsonPath('kind', 'collection');
@@ -586,7 +586,7 @@ class NightwatchApiTest extends TestCase
         $this->seedFixtures();
 
         $groupHash = '61616161616161616161616161616161';
-        $response = $this->getJson("/api/outgoing-requests/{$groupHash}?project_id={$this->projectOneId}&environment=production");
+        $response = $this->getJson("/api/outgoing-requests/{$groupHash}?project_id={$this->projectOneId}");
 
         $response->assertOk();
         $response->assertJsonPath('title', 'discord-webhook-proxy.bearstack.vn');
@@ -602,7 +602,7 @@ class NightwatchApiTest extends TestCase
     {
         $this->seedFixtures();
 
-        $response = $this->getJson("/api/outgoing-requests/63636363636363636363636363636363?project_id={$this->projectOneId}&environment=production");
+        $response = $this->getJson("/api/outgoing-requests/63636363636363636363636363636363?project_id={$this->projectOneId}");
 
         $response->assertNotFound();
         $response->assertJsonPath(
@@ -620,7 +620,7 @@ class NightwatchApiTest extends TestCase
         $response->assertStatus(409);
         $response->assertJsonPath(
             'message',
-            'Outgoing request group hash [62626262626262626262626262626262] exists in multiple project/environment scopes. Pass project_id and environment.',
+            'Outgoing request group hash [62626262626262626262626262626262] exists in multiple projects. Pass project_id.',
         );
     }
 
@@ -628,7 +628,7 @@ class NightwatchApiTest extends TestCase
     {
         $this->seedFixtures();
 
-        $response = $this->getJson("/api/users?project_id={$this->projectOneId}&environment=production&search=Alice&per_page=1");
+        $response = $this->getJson("/api/users?project_id={$this->projectOneId}&search=Alice&per_page=1");
 
         $response->assertOk();
         $response->assertJsonPath('kind', 'collection');
@@ -643,7 +643,7 @@ class NightwatchApiTest extends TestCase
     {
         $this->seedFixtures();
 
-        $response = $this->getJson("/api/users/user-1?project_id={$this->projectOneId}&environment=production");
+        $response = $this->getJson("/api/users/user-1?project_id={$this->projectOneId}");
 
         $response->assertOk();
         $response->assertJsonPath('title', 'Alice Nguyen');
@@ -660,7 +660,7 @@ class NightwatchApiTest extends TestCase
     {
         $this->seedFixtures();
 
-        $response = $this->getJson("/api/users/missing-user?project_id={$this->projectOneId}&environment=production");
+        $response = $this->getJson("/api/users/missing-user?project_id={$this->projectOneId}");
 
         $response->assertNotFound();
         $response->assertJsonPath('message', 'Nightwatch user [missing-user] was not found.');
@@ -675,7 +675,7 @@ class NightwatchApiTest extends TestCase
         $response->assertStatus(409);
         $response->assertJsonPath(
             'message',
-            'User [user-1] exists in multiple project/environment scopes. Pass project_id and environment.',
+            'User [user-1] exists in multiple projects. Pass project_id.',
         );
     }
 
@@ -683,7 +683,7 @@ class NightwatchApiTest extends TestCase
     {
         $this->seedFixtures();
 
-        $response = $this->getJson("/api/logs?project_id={$this->projectOneId}&environment=production&search=Remote%20API&per_page=1");
+        $response = $this->getJson("/api/logs?project_id={$this->projectOneId}&search=Remote%20API&per_page=1");
 
         $response->assertOk();
         $response->assertJsonPath('kind', 'collection');
@@ -700,11 +700,10 @@ class NightwatchApiTest extends TestCase
 
         $logId = DB::table('nw_logs')
             ->where('project_id', $this->projectOneId)
-            ->where('environment', 'production')
             ->where('message', 'Remote API is slow')
             ->value('id');
 
-        $response = $this->getJson("/api/logs/{$logId}?project_id={$this->projectOneId}&environment=production");
+        $response = $this->getJson("/api/logs/{$logId}?project_id={$this->projectOneId}");
 
         $response->assertOk();
         $response->assertJsonPath('title', 'Remote API is slow');
@@ -720,7 +719,7 @@ class NightwatchApiTest extends TestCase
     {
         $this->seedFixtures();
 
-        $response = $this->getJson("/api/logs/999999?project_id={$this->projectOneId}&environment=production");
+        $response = $this->getJson("/api/logs/999999?project_id={$this->projectOneId}");
 
         $response->assertNotFound();
         $response->assertJsonPath('message', 'Nightwatch log [999999] was not found.');
@@ -1210,26 +1209,17 @@ class NightwatchApiTest extends TestCase
      */
     private function createProjectWithToken(string $name, string $slug, string $secret): array
     {
+        $tokenHash = NightwatchProjectKeyManager::tokenHashForSecret($secret);
         $projectId = DB::table('nw_projects')->insertGetId([
             'name' => $name,
             'slug' => $slug,
             'is_active' => true,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        $tokenHash = NightwatchProjectKeyManager::tokenHashForSecret($secret);
-
-        DB::table('nw_ingest_tokens')->insert([
-            'project_id' => $projectId,
-            'environment' => 'production',
             'token_hash' => $tokenHash,
-            'key_name' => 'primary',
             'secret_sha256' => NightwatchProjectKeyManager::secretSha256($secret),
             'secret_fingerprint' => NightwatchProjectKeyManager::secretFingerprint(NightwatchProjectKeyManager::secretSha256($secret)),
             'secret_last_four' => substr($secret, -4),
-            'is_active' => true,
-            'revoked_at' => null,
+            'last_seen_at' => null,
+            'tags' => json_encode(['internal'], JSON_THROW_ON_ERROR),
             'created_at' => now(),
             'updated_at' => now(),
         ]);

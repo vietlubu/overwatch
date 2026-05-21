@@ -31,7 +31,6 @@ final class NightwatchOutgoingRequestScreenService
         $groups = $rows
             ->groupBy(fn (object $row): string => implode('|', [
                 $row->project_id,
-                $row->environment,
                 $row->group_hash,
             ]))
             ->map(fn (Collection $group): array => $this->mapListGroup($group))
@@ -99,8 +98,7 @@ final class NightwatchOutgoingRequestScreenService
         $scopes = DB::table('nw_outgoing_requests')
             ->where('group_hash', $groupHash)
             ->when($filters['project_id'] ?? null, fn (Builder $query, int $projectId) => $query->where('project_id', $projectId))
-            ->when($filters['environment'] ?? null, fn (Builder $query, string $environment) => $query->where('environment', $environment))
-            ->select(['project_id', 'environment'])
+            ->select(['project_id'])
             ->distinct()
             ->limit(2)
             ->get();
@@ -111,13 +109,12 @@ final class NightwatchOutgoingRequestScreenService
 
         if ($scopes->count() > 1) {
             throw new ConflictHttpException(
-                "Outgoing request group hash [{$groupHash}] exists in multiple project/environment scopes. Pass project_id and environment.",
+                "Outgoing request group hash [{$groupHash}] exists in multiple projects. Pass project_id.",
             );
         }
 
         $calls = $this->baseQuery([
             'project_id' => $scopes->first()->project_id,
-            'environment' => $scopes->first()->environment,
         ], applyRange: false)
             ->where('outgoing.group_hash', $groupHash)
             ->orderByDesc('outgoing.occurred_at')
@@ -143,7 +140,6 @@ final class NightwatchOutgoingRequestScreenService
             ],
             'scope' => [
                 'project_id' => $latest->project_id,
-                'environment' => $latest->environment,
                 'group_hash' => $groupHash,
             ],
             'metrics' => [
@@ -221,12 +217,10 @@ final class NightwatchOutgoingRequestScreenService
         return DB::table('nw_outgoing_requests as outgoing')
             ->leftJoin('nw_executions as executions', function ($join): void {
                 $join->on('executions.project_id', '=', 'outgoing.project_id')
-                    ->on('executions.environment', '=', 'outgoing.environment')
                     ->on('executions.execution_id', '=', 'outgoing.execution_id');
             })
             ->leftJoin('nw_request_details as request_details', 'request_details.execution_row_id', '=', 'executions.id')
             ->when($filters['project_id'] ?? null, fn (Builder $query, int $projectId) => $query->where('outgoing.project_id', $projectId))
-            ->when($filters['environment'] ?? null, fn (Builder $query, string $environment) => $query->where('outgoing.environment', $environment))
             ->when($applyRange, fn (Builder $query) => $query->where('outgoing.occurred_at', '>=', $from))
             ->when($search, function (Builder $query, string $searchTerm): void {
                 $like = '%'.$searchTerm.'%';
@@ -244,7 +238,6 @@ final class NightwatchOutgoingRequestScreenService
             ->select([
                 'outgoing.id',
                 'outgoing.project_id',
-                'outgoing.environment',
                 'outgoing.group_hash',
                 'outgoing.occurred_at',
                 'outgoing.execution_id',
@@ -271,13 +264,12 @@ final class NightwatchOutgoingRequestScreenService
         return [
             'sort_at' => (string) $latest->occurred_at,
             'row' => [
-                'id' => sha1($latest->project_id.'|'.$latest->environment.'|'.$latest->group_hash),
+                'id' => sha1($latest->project_id.'|'.$latest->group_hash),
                 'href' => [
                     'name' => 'screen',
                     'params' => ['screenKey' => 'outgoing-requests', 'detailId' => $latest->group_hash],
                     'query' => [
                         'project_id' => (string) $latest->project_id,
-                        'environment' => $latest->environment,
                     ],
                 ],
                 'domain' => $this->presenter->cell(
@@ -326,7 +318,6 @@ final class NightwatchOutgoingRequestScreenService
     {
         return [
             'project_id' => $filters['project_id'] ?? null,
-            'environment' => $filters['environment'] ?? null,
             'range' => $filters['range'] ?? '24h',
             'search' => $filters['search'] ?? null,
             'page' => (int) ($filters['page'] ?? 1),

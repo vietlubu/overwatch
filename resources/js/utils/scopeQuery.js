@@ -5,10 +5,6 @@ export const pickScopeQuery = (query = {}) => {
         scope.project_id = String(query.project_id);
     }
 
-    if (query.environment !== undefined && query.environment !== null && query.environment !== '') {
-        scope.environment = String(query.environment);
-    }
-
     return scope;
 };
 

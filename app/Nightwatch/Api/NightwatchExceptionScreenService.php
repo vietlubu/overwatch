@@ -30,7 +30,6 @@ final class NightwatchExceptionScreenService
         $groups = $rows
             ->groupBy(fn (object $row): string => implode('|', [
                 $row->project_id,
-                $row->environment,
                 $row->group_hash,
             ]))
             ->map(fn (Collection $group): array => $this->mapListGroup($group))
@@ -76,7 +75,7 @@ final class NightwatchExceptionScreenService
             ],
             'table' => [
                 'title' => sprintf('%d Exception Groups', $groups->count()),
-                'caption' => 'Grouped by project, environment, and group hash.',
+                'caption' => 'Grouped by project and group hash.',
                 'searchPlaceholder' => 'grep class, file, message…',
                 'columns' => [
                     ['key' => 'exception', 'label' => 'Exception', 'kind' => 'primary'],
@@ -94,8 +93,7 @@ final class NightwatchExceptionScreenService
         $scopes = DB::table('nw_exceptions')
             ->where('group_hash', $groupHash)
             ->when($filters['project_id'] ?? null, fn (Builder $query, int $projectId) => $query->where('project_id', $projectId))
-            ->when($filters['environment'] ?? null, fn (Builder $query, string $environment) => $query->where('environment', $environment))
-            ->select(['project_id', 'environment'])
+            ->select(['project_id'])
             ->distinct()
             ->limit(2)
             ->get();
@@ -106,13 +104,12 @@ final class NightwatchExceptionScreenService
 
         if ($scopes->count() > 1) {
             throw new ConflictHttpException(
-                "Exception group hash [{$groupHash}] exists in multiple project/environment scopes. Pass project_id and environment.",
+                "Exception group hash [{$groupHash}] exists in multiple projects. Pass project_id.",
             );
         }
 
         $occurrences = $this->baseQuery([
             'project_id' => $scopes->first()->project_id,
-            'environment' => $scopes->first()->environment,
         ], applyRange: false)
             ->where('exceptions.group_hash', $groupHash)
             ->orderByDesc('exceptions.occurred_at')
@@ -140,7 +137,6 @@ final class NightwatchExceptionScreenService
             ])),
             'scope' => [
                 'project_id' => $latest->project_id,
-                'environment' => $latest->environment,
                 'group_hash' => $groupHash,
             ],
             'metrics' => [
@@ -235,7 +231,6 @@ final class NightwatchExceptionScreenService
                             'params' => ['screenKey' => 'requests', 'detailId' => $row->execution_id],
                             'query' => [
                                 'project_id' => (string) $row->project_id,
-                                'environment' => $row->environment,
                             ],
                         ] : null,
                         'execution' => $this->presenter->cell(
@@ -262,17 +257,14 @@ final class NightwatchExceptionScreenService
             ->join('nw_projects as projects', 'projects.id', '=', 'exceptions.project_id')
             ->leftJoin('nw_executions as executions', function ($join): void {
                 $join->on('executions.project_id', '=', 'exceptions.project_id')
-                    ->on('executions.environment', '=', 'exceptions.environment')
                     ->on('executions.execution_id', '=', 'exceptions.execution_id');
             })
             ->leftJoin('nw_request_details as details', 'details.execution_row_id', '=', 'executions.id')
             ->leftJoin('nw_users as users', function ($join): void {
                 $join->on('users.project_id', '=', 'exceptions.project_id')
-                    ->on('users.environment', '=', 'exceptions.environment')
                     ->on('users.external_user_id', '=', 'exceptions.external_user_id');
             })
             ->when($filters['project_id'] ?? null, fn (Builder $query, int $projectId) => $query->where('exceptions.project_id', $projectId))
-            ->when($filters['environment'] ?? null, fn (Builder $query, string $environment) => $query->where('exceptions.environment', $environment))
             ->when($applyRange, fn (Builder $query) => $query->where('exceptions.occurred_at', '>=', $from))
             ->when(array_key_exists('handled', $filters), fn (Builder $query) => $query->where('exceptions.handled', (bool) $filters['handled']))
             ->when($search, function (Builder $query, string $searchTerm): void {
@@ -290,7 +282,6 @@ final class NightwatchExceptionScreenService
             ->select([
                 'exceptions.id',
                 'exceptions.project_id',
-                'exceptions.environment',
                 'exceptions.group_hash',
                 'exceptions.trace_id',
                 'exceptions.execution_id',
@@ -340,13 +331,12 @@ final class NightwatchExceptionScreenService
             'count' => $group->count(),
             'sort_at' => (string) $latest->occurred_at,
             'row' => [
-                'id' => sha1($latest->project_id.'|'.$latest->environment.'|'.$latest->group_hash),
+                'id' => sha1($latest->project_id.'|'.$latest->group_hash),
                 'href' => [
                     'name' => 'screen',
                     'params' => ['screenKey' => 'exceptions', 'detailId' => $latest->group_hash],
                     'query' => [
                         'project_id' => (string) $latest->project_id,
-                        'environment' => $latest->environment,
                     ],
                 ],
                 'exception' => $this->presenter->cell(
@@ -400,7 +390,6 @@ final class NightwatchExceptionScreenService
     {
         return [
             'project_id' => $filters['project_id'] ?? null,
-            'environment' => $filters['environment'] ?? null,
             'range' => $filters['range'] ?? '24h',
             'search' => $filters['search'] ?? null,
             'handled' => $filters['handled'] ?? null,

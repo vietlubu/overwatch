@@ -43,8 +43,6 @@ final class NightwatchEventIngestor
 
         $batchId = $this->createBatch(
             projectId: $token['project_id'] ?? null,
-            environment: $token['environment'] ?? null,
-            ingestTokenId: $token['id'] ?? null,
             tokenHash: $parts['token_hash'],
             protocolVersion: $parts['protocol_version'],
             transport: $transport,
@@ -75,7 +73,7 @@ final class NightwatchEventIngestor
                 return $count;
             });
 
-            $this->touchToken($token['id']);
+            $this->touchProject($token['project_id']);
             $this->markBatchAccepted($batchId, $inserted);
 
             return $inserted;
@@ -87,7 +85,7 @@ final class NightwatchEventIngestor
     }
 
     /**
-     * @param  array{id: int, project_id: int, environment: string}  $token
+     * @param  array{project_id: int}  $token
      * @param  array<string, mixed>  $record
      */
     private function ingestRecord(array $token, int $batchId, int $index, array $record): void
@@ -100,7 +98,6 @@ final class NightwatchEventIngestor
             'batch_id' => $batchId,
             'batch_record_index' => $index,
             'project_id' => $token['project_id'],
-            'environment' => $token['environment'],
             'event_type' => $normalized['event_type'],
             'schema_version' => $normalized['schema_version'],
             'occurred_at' => $normalized['occurred_at'],
@@ -136,7 +133,7 @@ final class NightwatchEventIngestor
     }
 
     /**
-     * @param  array{id: int, project_id: int, environment: string}  $token
+     * @param  array{project_id: int}  $token
      * @param  array<string, mixed>  $record
      * @return array<string, mixed>
      */
@@ -149,7 +146,6 @@ final class NightwatchEventIngestor
             'batch_id' => $batchId,
             'batch_record_index' => $index,
             'project_id' => $token['project_id'],
-            'environment' => $token['environment'],
             'schema_version' => (int) ($record['v'] ?? 1),
             'event_type' => $eventType,
             'occurred_at' => $occurredAt,
@@ -158,8 +154,8 @@ final class NightwatchEventIngestor
             'execution_id' => $this->resolveExecutionId($eventType, $record),
             'execution_source' => $this->resolveExecutionSource($eventType, $record),
             'execution_stage' => $this->nullableString($record['execution_stage'] ?? null),
-            'deployment_id' => $this->resolveDeploymentId($token['project_id'], $token['environment'], $record['deploy'] ?? null, $occurredAt),
-            'server_id' => $this->resolveServerId($token['project_id'], $token['environment'], $record['server'] ?? null, $occurredAt),
+            'deployment_id' => $this->resolveDeploymentId($token['project_id'], $record['deploy'] ?? null, $occurredAt),
+            'server_id' => $this->resolveServerId($token['project_id'], $record['server'] ?? null, $occurredAt),
             'external_user_id' => $this->nullableString($record['user'] ?? null),
         ];
     }
@@ -539,13 +535,11 @@ final class NightwatchEventIngestor
         $existing = DB::table('nw_executions')
             ->select('id')
             ->where('project_id', $normalized['project_id'])
-            ->where('environment', $normalized['environment'])
             ->where('execution_id', $normalized['execution_id'])
             ->first();
 
         $values = [
             'project_id' => $normalized['project_id'],
-            'environment' => $normalized['environment'],
             'batch_id' => $normalized['batch_id'],
             'batch_record_index' => $normalized['batch_record_index'],
             'execution_id' => $normalized['execution_id'],
@@ -573,7 +567,7 @@ final class NightwatchEventIngestor
     }
 
     /**
-     * @param  array{id: int, project_id: int, environment: string}  $token
+     * @param  array{project_id: int}  $token
      * @param  array<string, mixed>  $record
      */
     private function upsertUser(array $token, CarbonInterface $occurredAt, array $record): void
@@ -586,14 +580,12 @@ final class NightwatchEventIngestor
 
         $existing = DB::table('nw_users')
             ->where('project_id', $token['project_id'])
-            ->where('environment', $token['environment'])
             ->where('external_user_id', $externalUserId)
             ->first();
 
         if ($existing === null) {
             DB::table('nw_users')->insert([
                 'project_id' => $token['project_id'],
-                'environment' => $token['environment'],
                 'external_user_id' => $externalUserId,
                 'name' => $this->nullableString($record['name'] ?? null),
                 'username' => $this->nullableString($record['username'] ?? null),
@@ -630,7 +622,6 @@ final class NightwatchEventIngestor
 
         $existing = DB::table('nw_jobs')
             ->where('project_id', $normalized['project_id'])
-            ->where('environment', $normalized['environment'])
             ->where('job_id', $jobId)
             ->first();
 
@@ -650,7 +641,6 @@ final class NightwatchEventIngestor
         DB::table('nw_jobs')->updateOrInsert(
             [
                 'project_id' => $normalized['project_id'],
-                'environment' => $normalized['environment'],
                 'job_id' => $jobId,
             ],
             $values,
@@ -671,14 +661,12 @@ final class NightwatchEventIngestor
 
         $existing = DB::table('nw_jobs')
             ->where('project_id', $normalized['project_id'])
-            ->where('environment', $normalized['environment'])
             ->where('job_id', $jobId)
             ->first();
 
         DB::table('nw_jobs')->updateOrInsert(
             [
                 'project_id' => $normalized['project_id'],
-                'environment' => $normalized['environment'],
                 'job_id' => $jobId,
             ],
             [
@@ -706,7 +694,6 @@ final class NightwatchEventIngestor
             'batch_id',
             'batch_record_index',
             'project_id',
-            'environment',
             'occurred_at',
             'group_hash',
             'trace_id',
@@ -721,8 +708,6 @@ final class NightwatchEventIngestor
 
     private function createBatch(
         ?int $projectId,
-        ?string $environment,
-        ?int $ingestTokenId,
         string $tokenHash,
         string $protocolVersion,
         string $transport,
@@ -730,8 +715,6 @@ final class NightwatchEventIngestor
     ): int {
         return (int) DB::table('nw_ingest_batches')->insertGetId([
             'project_id' => $projectId,
-            'environment' => $environment,
-            'ingest_token_id' => $ingestTokenId,
             'token_hash' => $tokenHash,
             'protocol_version' => $protocolVersion,
             'transport' => $transport,
@@ -769,21 +752,14 @@ final class NightwatchEventIngestor
     }
 
     /**
-     * @return array{id: int, project_id: int, environment: string}|null
+     * @return array{project_id: int}|null
      */
     private function findToken(string $tokenHash): ?array
     {
-        $token = DB::table('nw_ingest_tokens')
-            ->join('nw_projects', 'nw_projects.id', '=', 'nw_ingest_tokens.project_id')
-            ->select([
-                'nw_ingest_tokens.id',
-                'nw_ingest_tokens.project_id',
-                'nw_ingest_tokens.environment',
-            ])
-            ->where('nw_ingest_tokens.token_hash', $tokenHash)
-            ->where('nw_ingest_tokens.is_active', true)
-            ->whereNull('nw_ingest_tokens.revoked_at')
-            ->where('nw_projects.is_active', true)
+        $token = DB::table('nw_projects')
+            ->select(['id as project_id'])
+            ->where('token_hash', $tokenHash)
+            ->where('is_active', true)
             ->first();
 
         if ($token === null) {
@@ -791,23 +767,21 @@ final class NightwatchEventIngestor
         }
 
         return [
-            'id' => (int) $token->id,
             'project_id' => (int) $token->project_id,
-            'environment' => (string) $token->environment,
         ];
     }
 
-    private function touchToken(int $tokenId): void
+    private function touchProject(int $projectId): void
     {
-        DB::table('nw_ingest_tokens')
-            ->where('id', $tokenId)
+        DB::table('nw_projects')
+            ->where('id', $projectId)
             ->update([
                 'last_seen_at' => now(),
                 'updated_at' => now(),
             ]);
     }
 
-    private function resolveServerId(int $projectId, string $environment, mixed $server, CarbonInterface $occurredAt): ?int
+    private function resolveServerId(int $projectId, mixed $server, CarbonInterface $occurredAt): ?int
     {
         $name = $this->nullableString($server);
 
@@ -815,7 +789,7 @@ final class NightwatchEventIngestor
             return null;
         }
 
-        $key = "{$projectId}:{$environment}:{$name}";
+        $key = "{$projectId}:{$name}";
 
         if (array_key_exists($key, $this->serverIds)) {
             return $this->serverIds[$key];
@@ -823,7 +797,6 @@ final class NightwatchEventIngestor
 
         $existing = DB::table('nw_servers')
             ->where('project_id', $projectId)
-            ->where('environment', $environment)
             ->where('name', $name)
             ->first();
 
@@ -838,7 +811,6 @@ final class NightwatchEventIngestor
 
         return $this->serverIds[$key] = (int) DB::table('nw_servers')->insertGetId([
             'project_id' => $projectId,
-            'environment' => $environment,
             'name' => $name,
             'last_seen_at' => $occurredAt,
             'created_at' => now(),
@@ -846,7 +818,7 @@ final class NightwatchEventIngestor
         ]);
     }
 
-    private function resolveDeploymentId(int $projectId, string $environment, mixed $deployment, CarbonInterface $occurredAt): ?int
+    private function resolveDeploymentId(int $projectId, mixed $deployment, CarbonInterface $occurredAt): ?int
     {
         $name = $this->nullableString($deployment);
 
@@ -854,7 +826,7 @@ final class NightwatchEventIngestor
             return null;
         }
 
-        $key = "{$projectId}:{$environment}:{$name}";
+        $key = "{$projectId}:{$name}";
 
         if (array_key_exists($key, $this->deploymentIds)) {
             return $this->deploymentIds[$key];
@@ -862,7 +834,6 @@ final class NightwatchEventIngestor
 
         $existing = DB::table('nw_deployments')
             ->where('project_id', $projectId)
-            ->where('environment', $environment)
             ->where('name', $name)
             ->first();
 
@@ -877,7 +848,6 @@ final class NightwatchEventIngestor
 
         return $this->deploymentIds[$key] = (int) DB::table('nw_deployments')->insertGetId([
             'project_id' => $projectId,
-            'environment' => $environment,
             'name' => $name,
             'last_seen_at' => $occurredAt,
             'created_at' => now(),

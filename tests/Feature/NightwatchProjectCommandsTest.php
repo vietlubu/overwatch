@@ -11,92 +11,124 @@ class NightwatchProjectCommandsTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_project_create_command_creates_a_project(): void
+    public function test_project_create_command_creates_a_project_with_key_and_tags(): void
     {
         $this->artisan('nightwatch:project:create', [
             'slug' => 'acme',
             '--name' => 'Acme',
-        ])->assertSuccessful();
-
-        $this->assertDatabaseHas('nw_projects', [
-            'slug' => 'acme',
-            'name' => 'Acme',
-            'is_active' => true,
-        ]);
-        $this->assertDatabaseCount('nw_ingest_tokens', 0);
-    }
-
-    public function test_key_create_command_generates_a_key_and_prints_the_secret_once(): void
-    {
-        DB::table('nw_projects')->insert([
-            'id' => 10,
-            'name' => 'Acme',
-            'slug' => 'acme',
-            'is_active' => true,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        $this->artisan('nightwatch:key:create', [
-            'project' => 'acme',
-            '--environment' => 'production',
-            '--name' => 'primary',
+            '--tags' => 'internal,billing',
         ])
             ->expectsOutputToContain('Store this secret now. It will not be shown again.')
             ->expectsOutputToContain('NIGHTWATCH_TOKEN=')
             ->expectsOutputToContain('NIGHTWATCH_INGEST_URI=')
             ->assertSuccessful();
 
-        $token = DB::table('nw_ingest_tokens')
-            ->where('project_id', 10)
-            ->where('environment', 'production')
-            ->where('key_name', 'primary')
+        $project = DB::table('nw_projects')
+            ->where('slug', 'acme')
             ->first();
 
-        $this->assertNotNull($token);
-        $this->assertTrue((bool) $token->is_active);
-        $this->assertNotEmpty($token->secret_sha256);
-        $this->assertNotEmpty($token->secret_fingerprint);
-        $this->assertNotEmpty($token->secret_last_four);
+        $this->assertNotNull($project);
+        $this->assertTrue((bool) $project->is_active);
+        $this->assertNotEmpty($project->token_hash);
+        $this->assertNotEmpty($project->secret_sha256);
+        $this->assertNotEmpty($project->secret_fingerprint);
+        $this->assertNotEmpty($project->secret_last_four);
+        $this->assertSame(['internal', 'billing'], json_decode((string) $project->tags, true));
+    }
+
+    public function test_project_update_command_updates_name_and_tags(): void
+    {
+        DB::table('nw_projects')->insert([
+            'id' => 10,
+            'name' => 'Acme',
+            'slug' => 'acme',
+            'is_active' => true,
+            'token_hash' => 'abc1234',
+            'secret_sha256' => str_repeat('a', 64),
+            'secret_fingerprint' => str_repeat('b', 16),
+            'secret_last_four' => '1234',
+            'last_seen_at' => null,
+            'tags' => json_encode(['internal'], JSON_THROW_ON_ERROR),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->artisan('nightwatch:project:update', [
+            'project' => 'acme',
+            '--name' => 'Acme API',
+            '--tags' => 'internal,api',
+        ])->assertSuccessful();
+
+        $this->assertDatabaseHas('nw_projects', [
+            'id' => 10,
+            'name' => 'Acme API',
+            'slug' => 'acme',
+        ]);
         $this->assertSame(
-            NightwatchProjectKeyManager::secretFingerprint((string) $token->secret_sha256),
-            $token->secret_fingerprint,
+            ['internal', 'api'],
+            json_decode((string) DB::table('nw_projects')->where('id', 10)->value('tags'), true),
         );
     }
 
-    public function test_key_create_command_supports_multiple_environments_for_the_same_project(): void
+    public function test_project_rotate_key_command_rotates_the_secret_material(): void
     {
+        $secret = 'nw_existing_secret_1234567890';
+
         DB::table('nw_projects')->insert([
             'id' => 11,
             'name' => 'Acme',
             'slug' => 'acme',
             'is_active' => true,
+            'token_hash' => NightwatchProjectKeyManager::tokenHashForSecret($secret),
+            'secret_sha256' => NightwatchProjectKeyManager::secretSha256($secret),
+            'secret_fingerprint' => NightwatchProjectKeyManager::secretFingerprint(NightwatchProjectKeyManager::secretSha256($secret)),
+            'secret_last_four' => substr($secret, -4),
+            'last_seen_at' => null,
+            'tags' => json_encode([], JSON_THROW_ON_ERROR),
             'created_at' => now(),
             'updated_at' => now(),
         ]);
 
-        $this->artisan('nightwatch:key:create', [
-            'project' => 'acme',
-            '--environment' => 'production',
-            '--name' => 'primary',
-        ])->assertSuccessful();
+        $before = DB::table('nw_projects')->where('id', 11)->first();
 
-        $this->artisan('nightwatch:key:create', [
+        $this->artisan('nightwatch:project:rotate-key', [
             'project' => 'acme',
-            '--environment' => 'staging',
-            '--name' => 'primary',
-        ])->assertSuccessful();
+        ])
+            ->expectsOutputToContain('Store this secret now. It will not be shown again.')
+            ->expectsOutputToContain('NIGHTWATCH_TOKEN=')
+            ->assertSuccessful();
 
-        $this->assertDatabaseCount('nw_ingest_tokens', 2);
-        $this->assertDatabaseHas('nw_ingest_tokens', [
-            'project_id' => 11,
-            'environment' => 'production',
-            'key_name' => 'primary',
+        $after = DB::table('nw_projects')->where('id', 11)->first();
+
+        $this->assertNotSame($before->token_hash, $after->token_hash);
+        $this->assertNotSame($before->secret_sha256, $after->secret_sha256);
+        $this->assertNotSame($before->secret_fingerprint, $after->secret_fingerprint);
+    }
+
+    public function test_find_project_normalizes_last_seen_at_from_database_strings(): void
+    {
+        $secret = 'nw_existing_secret_1234567890';
+        $lastSeenAt = now()->subMinute()->format('Y-m-d H:i:s');
+
+        DB::table('nw_projects')->insert([
+            'id' => 12,
+            'name' => 'Acme',
+            'slug' => 'acme',
+            'is_active' => true,
+            'token_hash' => NightwatchProjectKeyManager::tokenHashForSecret($secret),
+            'secret_sha256' => NightwatchProjectKeyManager::secretSha256($secret),
+            'secret_fingerprint' => NightwatchProjectKeyManager::secretFingerprint(NightwatchProjectKeyManager::secretSha256($secret)),
+            'secret_last_four' => substr($secret, -4),
+            'last_seen_at' => $lastSeenAt,
+            'tags' => json_encode([], JSON_THROW_ON_ERROR),
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
-        $this->assertDatabaseHas('nw_ingest_tokens', [
-            'project_id' => 11,
-            'environment' => 'staging',
-            'key_name' => 'primary',
-        ]);
+
+        $project = app(NightwatchProjectKeyManager::class)->findProject('acme');
+
+        $this->assertNotNull($project);
+        $this->assertSame('acme', $project['slug']);
+        $this->assertNotNull($project['last_seen_at']);
     }
 }

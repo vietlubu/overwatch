@@ -31,7 +31,6 @@ final class NightwatchScheduledTaskScreenService
         $groups = $rows
             ->groupBy(fn (object $row): string => implode('|', [
                 $row->project_id,
-                $row->environment,
                 $row->group_hash ?? '',
             ]))
             ->map(fn (Collection $group): array => $this->mapListGroup($group))
@@ -101,8 +100,7 @@ final class NightwatchScheduledTaskScreenService
             ->where('source', 'schedule')
             ->where('group_hash', $groupHash)
             ->when($filters['project_id'] ?? null, fn (Builder $query, int $projectId) => $query->where('project_id', $projectId))
-            ->when($filters['environment'] ?? null, fn (Builder $query, string $environment) => $query->where('environment', $environment))
-            ->select(['project_id', 'environment'])
+            ->select(['project_id'])
             ->distinct()
             ->limit(2)
             ->get();
@@ -113,13 +111,12 @@ final class NightwatchScheduledTaskScreenService
 
         if ($scopes->count() > 1) {
             throw new ConflictHttpException(
-                "Scheduled task group hash [{$groupHash}] exists in multiple project/environment scopes. Pass project_id and environment.",
+                "Scheduled task group hash [{$groupHash}] exists in multiple projects. Pass project_id.",
             );
         }
 
         $runs = $this->baseQuery([
             'project_id' => $scopes->first()->project_id,
-            'environment' => $scopes->first()->environment,
         ], applyRange: false)
             ->where('executions.group_hash', $groupHash)
             ->orderByDesc('executions.occurred_at')
@@ -145,7 +142,6 @@ final class NightwatchScheduledTaskScreenService
             ],
             'scope' => [
                 'project_id' => $latest->project_id,
-                'environment' => $latest->environment,
                 'group_hash' => $groupHash,
             ],
             'metrics' => [
@@ -245,7 +241,6 @@ final class NightwatchScheduledTaskScreenService
             ->join('nw_projects as projects', 'projects.id', '=', 'executions.project_id')
             ->where('executions.source', 'schedule')
             ->when($filters['project_id'] ?? null, fn (Builder $query, int $projectId) => $query->where('executions.project_id', $projectId))
-            ->when($filters['environment'] ?? null, fn (Builder $query, string $environment) => $query->where('executions.environment', $environment))
             ->when($applyRange, fn (Builder $query) => $query->where('executions.occurred_at', '>=', $from))
             ->when($search, function (Builder $query, string $searchTerm): void {
                 $like = '%'.$searchTerm.'%';
@@ -262,7 +257,6 @@ final class NightwatchScheduledTaskScreenService
             ->select([
                 'projects.name as project_name',
                 'executions.project_id',
-                'executions.environment',
                 'executions.execution_id',
                 'executions.group_hash',
                 'executions.occurred_at',
@@ -292,13 +286,12 @@ final class NightwatchScheduledTaskScreenService
         return [
             'sort_at' => (string) $latest->occurred_at,
             'row' => [
-                'id' => sha1($latest->project_id.'|'.$latest->environment.'|'.$latest->group_hash),
+                'id' => sha1($latest->project_id.'|'.$latest->group_hash),
                 'href' => [
                     'name' => 'screen',
                     'params' => ['screenKey' => 'scheduled-tasks', 'detailId' => $latest->group_hash],
                     'query' => [
                         'project_id' => (string) $latest->project_id,
-                        'environment' => $latest->environment,
                     ],
                 ],
                 'task' => $this->presenter->cell(
@@ -348,7 +341,6 @@ final class NightwatchScheduledTaskScreenService
     {
         return [
             'project_id' => $filters['project_id'] ?? null,
-            'environment' => $filters['environment'] ?? null,
             'range' => $filters['range'] ?? '24h',
             'search' => $filters['search'] ?? null,
             'page' => (int) ($filters['page'] ?? 1),

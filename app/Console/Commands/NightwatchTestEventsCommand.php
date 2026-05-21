@@ -30,7 +30,7 @@ class NightwatchTestEventsCommand extends Command
             timeout: $this->option('timeout') ? (int) $this->option('timeout') : null,
         );
 
-        $this->info("Nightwatch self-test completed for run [{$result['run_id']}] in environment [{$result['environment']}].");
+        $this->info("Nightwatch self-test completed for run [{$result['run_id']}] on project [{$result['project_id']}].");
         $this->table(
             ['Event Type', 'Count'],
             collect($result['summary'])

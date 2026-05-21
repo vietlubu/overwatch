@@ -31,7 +31,6 @@ final class NightwatchRequestScreenService
         $groups = $rows
             ->groupBy(fn (object $row): string => implode('|', [
                 $row->project_id,
-                $row->environment,
                 $row->method,
                 $row->route_name ?? '',
                 $row->route_domain ?? '',
@@ -120,8 +119,7 @@ final class NightwatchRequestScreenService
         $scopes = DB::table('nw_executions')
             ->where('execution_id', $executionId)
             ->when($filters['project_id'] ?? null, fn (Builder $query, int $projectId) => $query->where('project_id', $projectId))
-            ->when($filters['environment'] ?? null, fn (Builder $query, string $environment) => $query->where('environment', $environment))
-            ->select(['project_id', 'environment'])
+            ->select(['project_id'])
             ->distinct()
             ->limit(2)
             ->get();
@@ -132,20 +130,18 @@ final class NightwatchRequestScreenService
 
         if ($scopes->count() > 1) {
             throw new ConflictHttpException(
-                "Execution id [{$executionId}] exists in multiple project/environment scopes. Pass project_id and environment.",
+                "Execution id [{$executionId}] exists in multiple projects. Pass project_id.",
             );
         }
 
         $request = $this->baseQuery([
             'project_id' => $scopes->first()->project_id,
-            'environment' => $scopes->first()->environment,
         ], applyRange: false)
             ->where('executions.execution_id', $executionId)
             ->orderByDesc('executions.occurred_at')
             ->firstOrFail();
         $related = $this->baseQuery([
             'project_id' => $request->project_id,
-            'environment' => $request->environment,
         ], applyRange: false)
             ->where('details.method', $request->method)
             ->where(function (Builder $query) use ($request): void {
@@ -173,7 +169,6 @@ final class NightwatchRequestScreenService
             ])),
             'scope' => [
                 'project_id' => $request->project_id,
-                'environment' => $request->environment,
                 'execution_id' => $request->execution_id,
             ],
             'metrics' => [
@@ -267,7 +262,6 @@ final class NightwatchRequestScreenService
                             'params' => ['screenKey' => 'requests', 'detailId' => $row->execution_id],
                             'query' => [
                                 'project_id' => (string) $row->project_id,
-                                'environment' => $row->environment,
                             ],
                         ],
                         'execution' => $this->presenter->cell(
@@ -295,12 +289,10 @@ final class NightwatchRequestScreenService
             ->join('nw_projects as projects', 'projects.id', '=', 'executions.project_id')
             ->leftJoin('nw_users as users', function ($join): void {
                 $join->on('users.project_id', '=', 'executions.project_id')
-                    ->on('users.environment', '=', 'executions.environment')
                     ->on('users.external_user_id', '=', 'executions.external_user_id');
             })
             ->leftJoin('nw_servers as servers', 'servers.id', '=', 'executions.server_id')
             ->when($filters['project_id'] ?? null, fn (Builder $query, int $projectId) => $query->where('executions.project_id', $projectId))
-            ->when($filters['environment'] ?? null, fn (Builder $query, string $environment) => $query->where('executions.environment', $environment))
             ->when($applyRange, fn (Builder $query) => $query->where('executions.occurred_at', '>=', $from))
             ->when($search, function (Builder $query, string $searchTerm): void {
                 $like = '%'.$searchTerm.'%';
@@ -321,7 +313,6 @@ final class NightwatchRequestScreenService
             ->select([
                 'projects.name as project_name',
                 'executions.project_id',
-                'executions.environment',
                 'executions.execution_id',
                 'executions.occurred_at',
                 'executions.duration_us',
@@ -370,19 +361,18 @@ final class NightwatchRequestScreenService
         $route = $this->presenter->routeLabel($latest->method, $latest->route_path, $latest->url);
         $meta = array_filter([
             $latest->route_name,
-            $latest->project_name.' · '.$latest->environment,
+            $latest->project_name,
         ]);
 
         return [
             'sort_at' => (string) $latest->occurred_at,
             'row' => [
-                'id' => sha1($latest->project_id.'|'.$latest->environment.'|'.$route),
+                'id' => sha1($latest->project_id.'|'.$route),
                 'href' => [
                     'name' => 'screen',
                     'params' => ['screenKey' => 'requests', 'detailId' => $latestExecutionId],
                     'query' => [
                         'project_id' => (string) $latest->project_id,
-                        'environment' => $latest->environment,
                     ],
                 ],
                 'route' => $this->presenter->cell($route, ['meta' => implode(' · ', $meta)]),
@@ -465,7 +455,6 @@ final class NightwatchRequestScreenService
     {
         return [
             'project_id' => $filters['project_id'] ?? null,
-            'environment' => $filters['environment'] ?? null,
             'range' => $filters['range'] ?? '24h',
             'search' => $filters['search'] ?? null,
             'page' => (int) ($filters['page'] ?? 1),

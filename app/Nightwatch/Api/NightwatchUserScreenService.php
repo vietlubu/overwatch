@@ -30,14 +30,14 @@ final class NightwatchUserScreenService
         $requests = $this->requestQuery($filters, applyRange: true)->get();
         $exceptions = $this->exceptionQuery($filters, applyRange: true)->get();
 
-        $requestsByUser = $requests->groupBy(fn (object $row): string => $this->userKey($row->project_id, $row->environment, $row->external_user_id));
+        $requestsByUser = $requests->groupBy(fn (object $row): string => $this->userKey($row->project_id, $row->external_user_id));
         $exceptionCounts = $exceptions
-            ->groupBy(fn (object $row): string => $this->userKey($row->project_id, $row->environment, $row->external_user_id))
+            ->groupBy(fn (object $row): string => $this->userKey($row->project_id, $row->external_user_id))
             ->map(fn (Collection $rows): int => $rows->count());
 
         $items = $users
             ->map(function (object $user) use ($requestsByUser, $exceptionCounts): array {
-                $key = $this->userKey($user->project_id, $user->environment, $user->external_user_id);
+                $key = $this->userKey($user->project_id, $user->external_user_id);
                 $userRequests = $requestsByUser->get($key, collect());
                 $exceptionCount = (int) ($exceptionCounts->get($key) ?? 0);
 
@@ -64,8 +64,8 @@ final class NightwatchUserScreenService
                         $this->presenter->meta('exceptions '.$exceptions->count(), $exceptions->count() > 0 ? 'red' : 'green'),
                     ],
                     'bars' => $this->presenter->multiToneSparkBars([
-                        ['value' => (float) $users->filter(fn (object $user): bool => $requestsByUser->has($this->userKey($user->project_id, $user->environment, $user->external_user_id)))->count(), 'tone' => 'green'],
-                        ['value' => (float) $users->filter(fn (object $user): bool => ! $requestsByUser->has($this->userKey($user->project_id, $user->environment, $user->external_user_id)))->count(), 'tone' => 'yellow'],
+                        ['value' => (float) $users->filter(fn (object $user): bool => $requestsByUser->has($this->userKey($user->project_id, $user->external_user_id)))->count(), 'tone' => 'green'],
+                        ['value' => (float) $users->filter(fn (object $user): bool => ! $requestsByUser->has($this->userKey($user->project_id, $user->external_user_id)))->count(), 'tone' => 'yellow'],
                     ]),
                 ],
                 [
@@ -103,8 +103,7 @@ final class NightwatchUserScreenService
         $scopes = DB::table('nw_users')
             ->where('external_user_id', $externalUserId)
             ->when($filters['project_id'] ?? null, fn (Builder $query, int $projectId) => $query->where('project_id', $projectId))
-            ->when($filters['environment'] ?? null, fn (Builder $query, string $environment) => $query->where('environment', $environment))
-            ->select(['project_id', 'environment'])
+            ->select(['project_id'])
             ->distinct()
             ->limit(2)
             ->get();
@@ -115,19 +114,17 @@ final class NightwatchUserScreenService
 
         if ($scopes->count() > 1) {
             throw new ConflictHttpException(
-                "User [{$externalUserId}] exists in multiple project/environment scopes. Pass project_id and environment.",
+                "User [{$externalUserId}] exists in multiple projects. Pass project_id.",
             );
         }
 
         $user = DB::table('nw_users')
             ->where('project_id', $scopes->first()->project_id)
-            ->where('environment', $scopes->first()->environment)
             ->where('external_user_id', $externalUserId)
             ->first();
 
         $requests = $this->requestQuery([
             'project_id' => $scopes->first()->project_id,
-            'environment' => $scopes->first()->environment,
         ], applyRange: false)
             ->where('executions.external_user_id', $externalUserId)
             ->orderByDesc('executions.occurred_at')
@@ -135,7 +132,6 @@ final class NightwatchUserScreenService
 
         $exceptions = $this->exceptionQuery([
             'project_id' => $scopes->first()->project_id,
-            'environment' => $scopes->first()->environment,
         ], applyRange: false)
             ->where('exceptions.external_user_id', $externalUserId)
             ->get();
@@ -185,7 +181,6 @@ final class NightwatchUserScreenService
             ],
             'scope' => [
                 'project_id' => $user->project_id,
-                'environment' => $user->environment,
                 'external_user_id' => $externalUserId,
             ],
             'metrics' => [
@@ -254,7 +249,6 @@ final class NightwatchUserScreenService
                             'params' => ['screenKey' => 'requests', 'detailId' => $request->execution_id],
                             'query' => [
                                 'project_id' => (string) $request->project_id,
-                                'environment' => $request->environment,
                             ],
                         ],
                         'request' => $this->presenter->cell(
@@ -278,7 +272,6 @@ final class NightwatchUserScreenService
 
         return DB::table('nw_users')
             ->when($filters['project_id'] ?? null, fn (Builder $query, int $projectId) => $query->where('project_id', $projectId))
-            ->when($filters['environment'] ?? null, fn (Builder $query, string $environment) => $query->where('environment', $environment))
             ->when($search, function (Builder $query, string $searchTerm): void {
                 $like = '%'.$searchTerm.'%';
 
@@ -292,7 +285,6 @@ final class NightwatchUserScreenService
             ->select([
                 'id',
                 'project_id',
-                'environment',
                 'external_user_id',
                 'name',
                 'username',
@@ -310,11 +302,9 @@ final class NightwatchUserScreenService
             ->where('executions.source', 'request')
             ->whereNotNull('executions.external_user_id')
             ->when($filters['project_id'] ?? null, fn (Builder $query, int $projectId) => $query->where('executions.project_id', $projectId))
-            ->when($filters['environment'] ?? null, fn (Builder $query, string $environment) => $query->where('executions.environment', $environment))
             ->when($applyRange, fn (Builder $query) => $query->where('executions.occurred_at', '>=', $from))
             ->select([
                 'executions.project_id',
-                'executions.environment',
                 'executions.external_user_id',
                 'executions.execution_id',
                 'executions.occurred_at',
@@ -334,11 +324,9 @@ final class NightwatchUserScreenService
         return DB::table('nw_exceptions as exceptions')
             ->whereNotNull('exceptions.external_user_id')
             ->when($filters['project_id'] ?? null, fn (Builder $query, int $projectId) => $query->where('exceptions.project_id', $projectId))
-            ->when($filters['environment'] ?? null, fn (Builder $query, string $environment) => $query->where('exceptions.environment', $environment))
             ->when($applyRange, fn (Builder $query) => $query->where('exceptions.occurred_at', '>=', $from))
             ->select([
                 'exceptions.project_id',
-                'exceptions.environment',
                 'exceptions.external_user_id',
             ]);
     }
@@ -357,7 +345,6 @@ final class NightwatchUserScreenService
                     'params' => ['screenKey' => 'users', 'detailId' => $user->external_user_id],
                     'query' => [
                         'project_id' => (string) $user->project_id,
-                        'environment' => $user->environment,
                     ],
                 ],
                 'user' => $this->presenter->cell(
@@ -378,9 +365,9 @@ final class NightwatchUserScreenService
         ];
     }
 
-    private function userKey(int $projectId, string $environment, string $externalUserId): string
+    private function userKey(int $projectId, string $externalUserId): string
     {
-        return $projectId.'|'.$environment.'|'.$externalUserId;
+        return $projectId.'|'.$externalUserId;
     }
 
     private function resolveRangeStart(string $range): string
@@ -398,7 +385,6 @@ final class NightwatchUserScreenService
     {
         return [
             'project_id' => $filters['project_id'] ?? null,
-            'environment' => $filters['environment'] ?? null,
             'range' => $filters['range'] ?? '24h',
             'search' => $filters['search'] ?? null,
             'page' => (int) ($filters['page'] ?? 1),

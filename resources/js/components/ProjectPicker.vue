@@ -56,7 +56,7 @@ const emit = defineEmits(['close', 'select']);
                     </div>
                     <div class="picker-meta">
                         <span class="picker-chip">{{ entry.projectKey }}</span>
-                        <span v-if="entry.environment" class="picker-chip">{{ entry.environment }}</span>
+                        <span v-for="tag in entry.tags ?? []" :key="tag" class="picker-chip">{{ tag }}</span>
                     </div>
                 </button>
             </div>

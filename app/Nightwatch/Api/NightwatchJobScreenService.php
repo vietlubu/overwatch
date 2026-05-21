@@ -40,7 +40,7 @@ final class NightwatchJobScreenService
 
         $items = $jobs
             ->map(function (object $job) use ($latestAttempts, $latestQueues): array {
-                $key = $this->jobKey((int) $job->project_id, (string) $job->environment, (string) $job->job_id);
+                $key = $this->jobKey((int) $job->project_id, (string) $job->job_id);
                 $latestAttempt = $latestAttempts->get($key);
                 $latestQueue = $latestQueues->get($key);
                 $name = $this->jobName($job, $latestAttempt, $latestQueue);
@@ -58,7 +58,6 @@ final class NightwatchJobScreenService
                         $queue,
                         $connection,
                         $job->project_name,
-                        $job->environment,
                         $status,
                         $job->enqueued_by_execution_id,
                         $job->last_attempt_id,
@@ -70,7 +69,6 @@ final class NightwatchJobScreenService
                             'params' => ['screenKey' => 'jobs', 'detailId' => (string) $job->job_id],
                             'query' => [
                                 'project_id' => (string) $job->project_id,
-                                'environment' => (string) $job->environment,
                             ],
                         ],
                         'job' => $this->presenter->cell(
@@ -99,7 +97,7 @@ final class NightwatchJobScreenService
         $attempts = $this->attemptQuery($filters, applyRange: true)
             ->get()
             ->filter(fn (object $attempt): bool => $jobKeys->has(
-                $this->jobKey((int) $attempt->project_id, (string) $attempt->environment, (string) $attempt->job_id),
+                $this->jobKey((int) $attempt->project_id, (string) $attempt->job_id),
             ))
             ->values();
         $durations = $attempts->pluck('duration_us')->all();
@@ -166,8 +164,7 @@ final class NightwatchJobScreenService
         $scopes = DB::table('nw_jobs')
             ->where('job_id', $jobId)
             ->when($filters['project_id'] ?? null, fn (Builder $query, int $projectId) => $query->where('project_id', $projectId))
-            ->when($filters['environment'] ?? null, fn (Builder $query, string $environment) => $query->where('environment', $environment))
-            ->select(['project_id', 'environment'])
+            ->select(['project_id'])
             ->distinct()
             ->limit(2)
             ->get();
@@ -178,13 +175,12 @@ final class NightwatchJobScreenService
 
         if ($scopes->count() > 1) {
             throw new ConflictHttpException(
-                "Job id [{$jobId}] exists in multiple project/environment scopes. Pass project_id and environment.",
+                "Job id [{$jobId}] exists in multiple projects. Pass project_id.",
             );
         }
 
         $scope = [
             'project_id' => (int) $scopes->first()->project_id,
-            'environment' => (string) $scopes->first()->environment,
         ];
 
         $job = $this->baseJobQuery($scope, applyRange: false)
@@ -234,7 +230,6 @@ final class NightwatchJobScreenService
             ])),
             'scope' => [
                 'project_id' => (int) $job->project_id,
-                'environment' => (string) $job->environment,
                 'job_id' => (string) $job->job_id,
             ],
             'metrics' => [
@@ -328,7 +323,6 @@ final class NightwatchJobScreenService
         return DB::table('nw_jobs')
             ->join('nw_projects as projects', 'projects.id', '=', 'nw_jobs.project_id')
             ->when($filters['project_id'] ?? null, fn (Builder $query, int $projectId) => $query->where('nw_jobs.project_id', $projectId))
-            ->when($filters['environment'] ?? null, fn (Builder $query, string $environment) => $query->where('nw_jobs.environment', $environment))
             ->when($applyRange, function (Builder $query) use ($from): void {
                 $query->where(function (Builder $range) use ($from): void {
                     $range
@@ -343,7 +337,6 @@ final class NightwatchJobScreenService
             ->select([
                 'projects.name as project_name',
                 'nw_jobs.project_id',
-                'nw_jobs.environment',
                 'nw_jobs.job_id',
                 'nw_jobs.first_trace_id',
                 'nw_jobs.enqueued_by_execution_id',
@@ -364,14 +357,12 @@ final class NightwatchJobScreenService
         return DB::table('nw_job_attempt_details as attempts')
             ->join('nw_executions as executions', 'executions.id', '=', 'attempts.execution_row_id')
             ->when($filters['project_id'] ?? null, fn (Builder $query, int $projectId) => $query->where('executions.project_id', $projectId))
-            ->when($filters['environment'] ?? null, fn (Builder $query, string $environment) => $query->where('executions.environment', $environment))
             ->when($filters['job_id'] ?? null, fn (Builder $query, string $jobId) => $query->where('attempts.job_id', $jobId))
             ->when($filters['project_ids'] ?? null, fn (Builder $query, array $projectIds) => $query->whereIn('executions.project_id', $projectIds))
             ->when($filters['job_ids'] ?? null, fn (Builder $query, array $jobIds) => $query->whereIn('attempts.job_id', $jobIds))
             ->when($applyRange, fn (Builder $query) => $query->where('executions.occurred_at', '>=', $from))
             ->select([
                 'executions.project_id',
-                'executions.environment',
                 'executions.execution_id as attempt_execution_id',
                 'executions.trace_id',
                 'executions.occurred_at',
@@ -402,14 +393,12 @@ final class NightwatchJobScreenService
 
         return DB::table('nw_queued_jobs as queued')
             ->when($filters['project_id'] ?? null, fn (Builder $query, int $projectId) => $query->where('queued.project_id', $projectId))
-            ->when($filters['environment'] ?? null, fn (Builder $query, string $environment) => $query->where('queued.environment', $environment))
             ->when($filters['job_id'] ?? null, fn (Builder $query, string $jobId) => $query->where('queued.job_id', $jobId))
             ->when($filters['project_ids'] ?? null, fn (Builder $query, array $projectIds) => $query->whereIn('queued.project_id', $projectIds))
             ->when($filters['job_ids'] ?? null, fn (Builder $query, array $jobIds) => $query->whereIn('queued.job_id', $jobIds))
             ->when($applyRange, fn (Builder $query) => $query->where('queued.occurred_at', '>=', $from))
             ->select([
                 'queued.project_id',
-                'queued.environment',
                 'queued.job_id',
                 'queued.execution_id',
                 'queued.occurred_at',
@@ -434,7 +423,6 @@ final class NightwatchJobScreenService
             ->get()
             ->groupBy(fn (object $attempt): string => $this->jobKey(
                 (int) $attempt->project_id,
-                (string) $attempt->environment,
                 (string) $attempt->job_id,
             ))
             ->map(fn (Collection $group): object => $group->first());
@@ -454,7 +442,6 @@ final class NightwatchJobScreenService
             ->get()
             ->groupBy(fn (object $queue): string => $this->jobKey(
                 (int) $queue->project_id,
-                (string) $queue->environment,
                 (string) $queue->job_id,
             ))
             ->map(fn (Collection $group): object => $group->first());
@@ -481,7 +468,6 @@ final class NightwatchJobScreenService
             $connection,
             $queue,
             $job->project_name,
-            $job->environment,
         ]));
     }
 
@@ -495,9 +481,9 @@ final class NightwatchJobScreenService
         };
     }
 
-    private function jobKey(int $projectId, string $environment, string $jobId): string
+    private function jobKey(int $projectId, string $jobId): string
     {
-        return implode('|', [$projectId, $environment, $jobId]);
+        return implode('|', [$projectId, $jobId]);
     }
 
     private function resolveRangeStart(string $range): string
@@ -515,7 +501,6 @@ final class NightwatchJobScreenService
     {
         return [
             'project_id' => $filters['project_id'] ?? null,
-            'environment' => $filters['environment'] ?? null,
             'range' => $filters['range'] ?? '24h',
             'search' => $filters['search'] ?? null,
             'page' => (int) ($filters['page'] ?? 1),

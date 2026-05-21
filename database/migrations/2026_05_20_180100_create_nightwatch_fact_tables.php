@@ -44,7 +44,6 @@ return new class extends Migration
                     batch_id BIGINT NOT NULL REFERENCES nw_ingest_batches(id) ON DELETE CASCADE,
                     batch_record_index INTEGER NOT NULL,
                     project_id BIGINT NOT NULL REFERENCES nw_projects(id) ON DELETE CASCADE,
-                    environment VARCHAR(64) NOT NULL,
                     event_type VARCHAR(64) NOT NULL,
                     schema_version SMALLINT NOT NULL DEFAULT 1,
                     occurred_at TIMESTAMPTZ(6) NOT NULL,
@@ -62,7 +61,7 @@ return new class extends Migration
                 ) PARTITION BY RANGE (occurred_at)
             SQL);
 
-            DB::statement('CREATE INDEX nw_raw_events_project_env_occurred_idx ON nw_raw_events (project_id, environment, occurred_at DESC)');
+            DB::statement('CREATE INDEX nw_raw_events_project_occurred_idx ON nw_raw_events (project_id, occurred_at DESC)');
             DB::statement('CREATE INDEX nw_raw_events_event_type_occurred_idx ON nw_raw_events (event_type, occurred_at DESC)');
             DB::statement('CREATE INDEX nw_raw_events_trace_idx ON nw_raw_events (trace_id)');
             DB::statement('CREATE INDEX nw_raw_events_execution_idx ON nw_raw_events (execution_id)');
@@ -79,7 +78,6 @@ return new class extends Migration
             $table->foreignId('batch_id')->constrained('nw_ingest_batches')->cascadeOnDelete();
             $table->unsignedInteger('batch_record_index');
             $table->foreignId('project_id')->constrained('nw_projects')->cascadeOnDelete();
-            $table->string('environment', 64);
             $table->string('event_type', 64);
             $table->unsignedSmallInteger('schema_version')->default(1);
             $table->timestampTz('occurred_at', 6);
@@ -95,7 +93,7 @@ return new class extends Migration
             $table->timestamps();
 
             $table->unique(['batch_id', 'batch_record_index'], 'nw_raw_events_batch_row_unique');
-            $table->index(['project_id', 'environment', 'occurred_at'], 'nw_raw_events_project_env_occurred_idx');
+            $table->index(['project_id', 'occurred_at'], 'nw_raw_events_project_occurred_idx');
             $table->index(['event_type', 'occurred_at'], 'nw_raw_events_event_type_occurred_idx');
             $table->index('trace_id', 'nw_raw_events_trace_idx');
             $table->index('execution_id', 'nw_raw_events_execution_idx');
@@ -108,7 +106,6 @@ return new class extends Migration
         Schema::create('nw_executions', function (Blueprint $table) {
             $table->id();
             $table->foreignId('project_id')->constrained('nw_projects')->cascadeOnDelete();
-            $table->string('environment', 64);
             $table->foreignId('batch_id')->constrained('nw_ingest_batches')->cascadeOnDelete();
             $table->unsignedInteger('batch_record_index');
             $table->string('execution_id', 64);
@@ -140,8 +137,8 @@ return new class extends Migration
             $table->timestamps();
 
             $table->unique(['batch_id', 'batch_record_index'], 'nw_executions_batch_row_unique');
-            $table->unique(['project_id', 'environment', 'execution_id'], 'nw_executions_project_env_execution_unique');
-            $table->index(['project_id', 'environment', 'occurred_at'], 'nw_executions_project_env_occurred_idx');
+            $table->unique(['project_id', 'execution_id'], 'nw_executions_project_execution_unique');
+            $table->index(['project_id', 'occurred_at'], 'nw_executions_project_occurred_idx');
             $table->index(['project_id', 'trace_id'], 'nw_executions_project_trace_idx');
             $table->index(['project_id', 'execution_id'], 'nw_executions_project_execution_idx');
             $table->index(['project_id', 'source', 'occurred_at'], 'nw_executions_project_source_occurred_idx');
@@ -354,7 +351,6 @@ return new class extends Migration
         Schema::create('nw_jobs', function (Blueprint $table) {
             $table->id();
             $table->foreignId('project_id')->constrained('nw_projects')->cascadeOnDelete();
-            $table->string('environment', 64);
             $table->string('job_id');
             $table->string('first_trace_id', 64)->nullable();
             $table->string('enqueued_by_execution_id', 64)->nullable();
@@ -366,8 +362,8 @@ return new class extends Migration
             $table->unsignedBigInteger('total_runtime_us')->default(0);
             $table->timestamps();
 
-            $table->unique(['project_id', 'environment', 'job_id'], 'nw_jobs_project_env_job_unique');
-            $table->index(['project_id', 'environment', 'last_attempt_at'], 'nw_jobs_project_env_last_attempt_idx');
+            $table->unique(['project_id', 'job_id'], 'nw_jobs_project_job_unique');
+            $table->index(['project_id', 'last_attempt_at'], 'nw_jobs_project_last_attempt_idx');
         });
     }
 
@@ -376,7 +372,6 @@ return new class extends Migration
         $table->foreignId('batch_id')->constrained('nw_ingest_batches')->cascadeOnDelete();
         $table->unsignedInteger('batch_record_index');
         $table->foreignId('project_id')->constrained('nw_projects')->cascadeOnDelete();
-        $table->string('environment', 64);
         $table->timestampTz('occurred_at', 6);
         $groupHash = $table->char('group_hash', 32);
 
@@ -395,7 +390,7 @@ return new class extends Migration
     private function addEventIndexes(Blueprint $table, string $tableName, bool $groupHashNullable = false): void
     {
         $table->unique(['batch_id', 'batch_record_index'], "{$tableName}_batch_row_unique");
-        $table->index(['project_id', 'environment', 'occurred_at'], "{$tableName}_project_env_occurred_idx");
+        $table->index(['project_id', 'occurred_at'], "{$tableName}_project_occurred_idx");
         $table->index(['project_id', 'trace_id'], "{$tableName}_project_trace_idx");
         $table->index(['project_id', 'execution_id'], "{$tableName}_project_execution_idx");
 
@@ -423,7 +418,7 @@ return new class extends Migration
         ));
 
         DB::statement(sprintf(
-            'CREATE INDEX IF NOT EXISTS %1$s_project_env_occurred_idx ON %1$s (project_id, environment, occurred_at DESC)',
+            'CREATE INDEX IF NOT EXISTS %1$s_project_occurred_idx ON %1$s (project_id, occurred_at DESC)',
             $name,
         ));
         DB::statement(sprintf(

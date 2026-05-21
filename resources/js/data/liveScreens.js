@@ -10,10 +10,6 @@ const pickScope = (query = {}) => {
         scope.project_id = query.project_id;
     }
 
-    if (query.environment) {
-        scope.environment = query.environment;
-    }
-
     return scope;
 };
 

@@ -32,24 +32,28 @@ final class NightwatchSelfTestHarness
     ) {}
 
     /**
-     * @return array{run_id: string, project_id: int, environment: string, summary: array<string, int>}
+     * @return array{run_id: string, project_id: int, summary: array<string, int>}
      */
     public function run(?string $runId = null, ?int $listenerPort = null, ?int $webPort = null, ?int $secondaryWebPort = null, ?int $timeout = null): array
     {
         $runId ??= Str::lower((string) Str::ulid());
         $timeout ??= (int) config('overwatch.self_test.startup_timeout', 20);
 
-        [$project, $key] = DB::transaction(function () use ($runId) {
+        [$project, $key] = DB::transaction(function () {
             $slug = (string) config('overwatch.self_test.project_slug', 'overwatch-self-test');
             $name = (string) config('overwatch.self_test.project_name', 'Overwatch Self Test');
-            $project = $this->keys->findProject($slug) ?? $this->keys->createProject($slug, $name);
-            $environment = "self-test-{$runId}";
-            $key = $this->keys->createKey($project, $environment, 'primary');
 
-            return [$project, $key];
+            $project = $this->keys->findProject($slug);
+
+            if ($project === null) {
+                $created = $this->keys->createProject($slug, $name);
+
+                return [$created, $created];
+            }
+
+            return [$project, $this->keys->rotateKey($project)];
         });
 
-        $environment = $key['environment'];
         $listenerPort ??= $this->availablePort();
         $webPort ??= $this->availablePort();
         $secondaryWebPort ??= $this->availablePort();
@@ -76,12 +80,11 @@ final class NightwatchSelfTestHarness
             $this->runHelperCommand(['queue:work', 'database', '--once', '--queue='.NightwatchSelfTestSupport::queueName($runId, 'released'), '--sleep=0', '--tries=1'], $this->helperEnvironment($key['secret'], $ingestUri, $deployment, 'queue-released', $runId, $secondaryBaseUrl), [0]);
             $this->runHelperCommand(['queue:work', 'database', '--once', '--queue='.NightwatchSelfTestSupport::queueName($runId, 'failed'), '--sleep=0', '--tries=1'], $this->helperEnvironment($key['secret'], $ingestUri, $deployment, 'queue-failed', $runId, $secondaryBaseUrl), [0]);
 
-            $summary = $this->waitForAndVerify($project['id'], $environment, $timeout);
+            $summary = $this->waitForAndVerify($project['id'], $runId, $timeout);
 
             return [
                 'run_id' => $runId,
                 'project_id' => $project['id'],
-                'environment' => $environment,
                 'summary' => $summary,
             ];
         } finally {
@@ -176,16 +179,21 @@ final class NightwatchSelfTestHarness
     /**
      * @return array<string, int>
      */
-    private function waitForAndVerify(int $projectId, string $environment, int $timeout): array
+    private function waitForAndVerify(int $projectId, string $runId, int $timeout): array
     {
         $expectedRawCount = 35;
+        $deployment = "nightwatch-self-test-{$runId}";
+        $selfTestUserEmail = NightwatchSelfTestSupport::userEmail($runId);
         $deadline = microtime(true) + $timeout;
 
         do {
-            $rawCount = DB::table('nw_raw_events')
+            $deploymentId = $this->resolveDeploymentId($projectId, $deployment);
+            $deploymentRawCount = DB::table('nw_raw_events')
                 ->where('project_id', $projectId)
-                ->where('environment', $environment)
+                ->when($deploymentId !== null, fn ($query) => $query->where('deployment_id', $deploymentId))
                 ->count();
+            $userRawCount = $this->resolveSelfTestUserRawCount($projectId, $selfTestUserEmail);
+            $rawCount = $deploymentRawCount + $userRawCount;
 
             if ($rawCount >= $expectedRawCount) {
                 break;
@@ -195,14 +203,21 @@ final class NightwatchSelfTestHarness
         } while (microtime(true) < $deadline);
 
         $errors = [];
+        $deploymentId = $this->resolveDeploymentId($projectId, $deployment);
+
+        if ($deploymentId === null) {
+            throw new RuntimeException("Unable to resolve self-test deployment [{$deployment}] for project [{$projectId}].");
+        }
+
         $summary = DB::table('nw_raw_events')
             ->select('event_type', DB::raw('count(*) as aggregate'))
             ->where('project_id', $projectId)
-            ->where('environment', $environment)
+            ->where('deployment_id', $deploymentId)
             ->groupBy('event_type')
             ->pluck('aggregate', 'event_type')
             ->map(fn ($count) => (int) $count)
             ->all();
+        $summary['user'] = $this->resolveSelfTestUserRawCount($projectId, $selfTestUserEmail);
 
         $expectedSummary = [
             'cache-event' => 6,
@@ -226,10 +241,19 @@ final class NightwatchSelfTestHarness
             }
         }
 
+        $userCount = DB::table('nw_users')
+            ->where('project_id', $projectId)
+            ->where('username', $selfTestUserEmail)
+            ->count();
+
+        if ($userCount !== 1) {
+            $errors[] = "Expected exactly one self-test user row for [{$selfTestUserEmail}], found [{$userCount}].";
+        }
+
         $requestStates = DB::table('nw_request_details as details')
             ->join('nw_executions as executions', 'executions.id', '=', 'details.execution_row_id')
             ->where('executions.project_id', $projectId)
-            ->where('executions.environment', $environment)
+            ->where('executions.deployment_id', $deploymentId)
             ->pluck('details.request_payload_state', 'details.route_name')
             ->all();
 
@@ -251,7 +275,7 @@ final class NightwatchSelfTestHarness
         $commandExitCodes = DB::table('nw_command_details as details')
             ->join('nw_executions as executions', 'executions.id', '=', 'details.execution_row_id')
             ->where('executions.project_id', $projectId)
-            ->where('executions.environment', $environment)
+            ->where('executions.deployment_id', $deploymentId)
             ->where('details.name', 'nightwatch:self-test:command')
             ->pluck('details.exit_code')
             ->map(fn ($value) => (int) $value)
@@ -264,7 +288,7 @@ final class NightwatchSelfTestHarness
         $scheduledCommandExitCodes = DB::table('nw_command_details as details')
             ->join('nw_executions as executions', 'executions.id', '=', 'details.execution_row_id')
             ->where('executions.project_id', $projectId)
-            ->where('executions.environment', $environment)
+            ->where('executions.deployment_id', $deploymentId)
             ->where('details.name', 'nightwatch:self-test:schedule')
             ->pluck('details.exit_code')
             ->map(fn ($value) => (int) $value)
@@ -277,7 +301,7 @@ final class NightwatchSelfTestHarness
         $scheduledStatuses = DB::table('nw_scheduled_task_details as details')
             ->join('nw_executions as executions', 'executions.id', '=', 'details.execution_row_id')
             ->where('executions.project_id', $projectId)
-            ->where('executions.environment', $environment)
+            ->where('executions.deployment_id', $deploymentId)
             ->pluck('details.status')
             ->all();
 
@@ -288,7 +312,7 @@ final class NightwatchSelfTestHarness
         $jobAttemptStatuses = DB::table('nw_job_attempt_details as details')
             ->join('nw_executions as executions', 'executions.id', '=', 'details.execution_row_id')
             ->where('executions.project_id', $projectId)
-            ->where('executions.environment', $environment)
+            ->where('executions.deployment_id', $deploymentId)
             ->pluck('details.status')
             ->all();
 
@@ -298,7 +322,7 @@ final class NightwatchSelfTestHarness
 
         $cacheTypes = DB::table('nw_cache_events')
             ->where('project_id', $projectId)
-            ->where('environment', $environment)
+            ->where('deployment_id', $deploymentId)
             ->pluck('cache_event_type')
             ->all();
 
@@ -315,7 +339,7 @@ final class NightwatchSelfTestHarness
 
         $exceptions = DB::table('nw_exceptions')
             ->where('project_id', $projectId)
-            ->where('environment', $environment)
+            ->where('deployment_id', $deploymentId)
             ->select('message', 'handled', 'execution_source')
             ->get()
             ->all();
@@ -347,6 +371,25 @@ final class NightwatchSelfTestHarness
         }
 
         return $summary;
+    }
+
+    private function resolveDeploymentId(int $projectId, string $deployment): ?int
+    {
+        $id = DB::table('nw_deployments')
+            ->where('project_id', $projectId)
+            ->where('name', $deployment)
+            ->value('id');
+
+        return $id === null ? null : (int) $id;
+    }
+
+    private function resolveSelfTestUserRawCount(int $projectId, string $selfTestUserEmail): int
+    {
+        return DB::table('nw_raw_events')
+            ->where('project_id', $projectId)
+            ->where('event_type', 'user')
+            ->where('payload', 'like', '%'.$selfTestUserEmail.'%')
+            ->count();
     }
 
     /**

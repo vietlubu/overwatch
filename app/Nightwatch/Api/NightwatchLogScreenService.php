@@ -92,7 +92,6 @@ final class NightwatchLogScreenService
             ],
             'scope' => [
                 'project_id' => $log->project_id,
-                'environment' => $log->environment,
                 'log_id' => (string) $log->id,
             ],
             'summaryPanels' => [
@@ -129,12 +128,10 @@ final class NightwatchLogScreenService
         return DB::table('nw_logs as logs')
             ->leftJoin('nw_executions as executions', function ($join): void {
                 $join->on('executions.project_id', '=', 'logs.project_id')
-                    ->on('executions.environment', '=', 'logs.environment')
                     ->on('executions.execution_id', '=', 'logs.execution_id');
             })
             ->leftJoin('nw_request_details as request_details', 'request_details.execution_row_id', '=', 'executions.id')
             ->when($filters['project_id'] ?? null, fn (Builder $query, int $projectId) => $query->where('logs.project_id', $projectId))
-            ->when($filters['environment'] ?? null, fn (Builder $query, string $environment) => $query->where('logs.environment', $environment))
             ->when($applyRange, fn (Builder $query) => $query->where('logs.occurred_at', '>=', $from))
             ->when($search, function (Builder $query, string $searchTerm): void {
                 $like = '%'.$searchTerm.'%';
@@ -151,7 +148,6 @@ final class NightwatchLogScreenService
             ->select([
                 'logs.id',
                 'logs.project_id',
-                'logs.environment',
                 'logs.occurred_at',
                 'logs.execution_id',
                 'logs.execution_source',
@@ -175,7 +171,6 @@ final class NightwatchLogScreenService
                 'params' => ['screenKey' => 'logs', 'detailId' => (string) $row->id],
                 'query' => [
                     'project_id' => (string) $row->project_id,
-                    'environment' => $row->environment,
                 ],
             ],
             'log' => $this->presenter->cell(
@@ -232,7 +227,6 @@ final class NightwatchLogScreenService
     {
         return [
             'project_id' => $filters['project_id'] ?? null,
-            'environment' => $filters['environment'] ?? null,
             'range' => $filters['range'] ?? '24h',
             'search' => $filters['search'] ?? null,
             'page' => (int) ($filters['page'] ?? 1),

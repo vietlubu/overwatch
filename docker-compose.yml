@@ -1,0 +1,102 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+      args:
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+    working_dir: /var/www/html
+    command: sh -lc "touch database/database.sqlite && php artisan serve --host=0.0.0.0 --port=8000"
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      APP_URL: http://localhost:8000
+      DB_CONNECTION: ${DB_CONNECTION:-sqlite}
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_DATABASE: ${DB_DATABASE:-/var/www/html/database/database.sqlite}
+      DB_USERNAME: ${DB_USERNAME:-overwatch}
+      DB_PASSWORD: ${DB_PASSWORD:-secret}
+    volumes:
+      - ./:/var/www/html
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+
+  listener:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+      args:
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+    working_dir: /var/www/html
+    command: sh -lc "touch database/database.sqlite && php artisan nightwatch:listen"
+    ports:
+      - "2407:2407"
+    env_file:
+      - .env
+    environment:
+      DB_CONNECTION: ${DB_CONNECTION:-sqlite}
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_DATABASE: ${DB_DATABASE:-/var/www/html/database/database.sqlite}
+      DB_USERNAME: ${DB_USERNAME:-overwatch}
+      DB_PASSWORD: ${DB_PASSWORD:-secret}
+      OVERWATCH_TCP_HOST: 0.0.0.0
+      OVERWATCH_TCP_PORT: 2407
+    volumes:
+      - ./:/var/www/html
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+
+  queue:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+      args:
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+    working_dir: /var/www/html
+    command: sh -lc "touch database/database.sqlite && php artisan queue:work --tries=1"
+    env_file:
+      - .env
+    environment:
+      DB_CONNECTION: ${DB_CONNECTION:-sqlite}
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_DATABASE: ${DB_DATABASE:-/var/www/html/database/database.sqlite}
+      DB_USERNAME: ${DB_USERNAME:-overwatch}
+      DB_PASSWORD: ${DB_PASSWORD:-secret}
+    volumes:
+      - ./:/var/www/html
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+
+  postgres:
+    profiles: ["postgres"]
+    image: postgres:17
+    ports:
+      - "54320:5432"
+    environment:
+      POSTGRES_DB: overwatch
+      POSTGRES_USER: overwatch
+      POSTGRES_PASSWORD: secret
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U overwatch -d overwatch"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  pg_data:

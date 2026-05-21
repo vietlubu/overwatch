@@ -132,6 +132,53 @@ OVERWATCH_CLEANUP_SCHEDULE_ENABLED=true
 OVERWATCH_CLEANUP_SCHEDULE_DAILY_AT=02:00
 ```
 
+## Chạy bằng Docker Compose (SQLite hoặc PostgreSQL)
+
+Repo đã có sẵn:
+
+- `docker-compose.yml`
+- `docker/php/Dockerfile`
+
+### 1) Mặc định dùng SQLite (nhẹ, đơn giản)
+
+```bash
+docker compose build
+docker compose run --rm app composer install
+docker compose run --rm app php artisan key:generate
+docker compose run --rm app php artisan migrate
+docker compose up -d
+```
+
+Mặc định sẽ có:
+
+- HTTP app: `http://127.0.0.1:8000`
+- TCP ingest listener: `127.0.0.1:2407`
+
+### 2) Dùng PostgreSQL
+
+Chạy với profile `postgres` và override DB env:
+
+```bash
+docker compose --profile postgres up -d
+docker compose --profile postgres run --rm \
+  -e DB_CONNECTION=pgsql \
+  -e DB_HOST=postgres \
+  -e DB_PORT=5432 \
+  -e DB_DATABASE=overwatch \
+  -e DB_USERNAME=overwatch \
+  -e DB_PASSWORD=secret \
+  app php artisan migrate
+```
+
+PostgreSQL sẽ mở ở `127.0.0.1:54320` (`overwatch/secret`).
+
+Xem logs và dừng:
+
+```bash
+docker compose logs -f app listener queue
+docker compose down
+```
+
 ## Tạo project và ingest key
 
 Tạo một tenant cho app sẽ được monitor:

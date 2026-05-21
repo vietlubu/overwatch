@@ -1,8 +1,25 @@
 # Overwatch
 
+English version: [README_EN.md](./README_EN.md)
+
 Overwatch là Laravel ingest server cho `laravel/nightwatch`.
 
 Repo này nhận payload TCP từ các Laravel app khác, xác thực ingest key theo `project`, và lưu dữ liệu vào database để phục vụ API, rollup, cleanup, và các bước phân tích tiếp theo.
+
+## Trạng thái & Roadmap
+
+### Đã hoàn thành
+
+- TCP ingest listener cho Nightwatch.
+- API đọc dữ liệu ingest (`/api/*`).
+- Self-test end-to-end harness.
+
+### Todo tương lai
+
+- Login và authentication.
+- Project management (tạo, cập nhật, rotate ingest key).
+- Discord/Slack issue notification.
+- Rule-based alerting cho các lỗi quan trọng.
 
 ## Repo này dùng để làm gì
 
